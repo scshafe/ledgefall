@@ -13,7 +13,7 @@ using fp::Fixed;
 const Fixed kLobGravity = fx100(14);
 constexpr int kGlueLife = 420, kOilLife = 420, kAcidLife = 150;
 const Fixed kGlueWidth = fx100(2300), kOilWidth = fx100(3500), kAcidWidth = fx100(2600);
-constexpr int kPatchMax = 2, kAcidMax = 1;
+constexpr int kPatchMax = 2, kAcidMax = 1, kAcidSlabEvery = 48;
 
 // Pip's gust: a fan that blows 340 px ahead for 3 s after a 0.4 s spin-up.
 constexpr int kGustLife = 180, kGustArm = 24;
@@ -22,6 +22,13 @@ const Fixed kGustForce = fx100(9);      // 0.27 px/tick^2 at the fan, half that 
 const Fixed kGustLobPush = fx100(4);    // and what it does to a lob in flight (0.12 px/tick^2)
 
 // Pip's drill: a hop, then a dive that breaks the tiles it lands on.
+// Mason's anvil (30 x 26 px): punches through up to three crumble tiles, or
+// does 2 damage to a slab and lies on it a while.
+constexpr int kAnvilMaxBreaks = 3, kAnvilRestTicks = 45;
+const Fixed kAnvilHalfWidth = fx100(480), kAnvilHeight = fx100(830);
+const Fixed kAnvilGravity = fx100(19), kAnvilMaxFall = fx100(448);
+const Fixed kSpringBounce = fx100(416);  // a spring launches an anvil at 13 px/tick
+
 constexpr int kDrillHopTicks = 10;
 const Fixed kDrillHop = fx100(180);     // 8 px/tick up
 const Fixed kDrillDive = fx100(350);    // 16 px/tick down
@@ -29,10 +36,6 @@ const Fixed kDrillBounce = fx100(200);  // 9 px/tick up
 const Fixed kDrillNeighbourStress = fx100(40);
 const Fixed kDrillReach = fx100(4500);  // neighbours within 140 px
 const Fixed kAcidStress = Fixed::from_raw(Fixed::kOneRaw / 40);
-
-bool in_play(fp::PlatformPhase p) {
-  return p == fp::PlatformPhase::Solid || p == fp::PlatformPhase::Shaking || p == fp::PlatformPhase::Doomed;
-}
 
 struct Surface {
   Fixed left, right, top;
@@ -110,7 +113,103 @@ void land(const Rules& rules, State& state, const Object& lob, const Surface& on
   register_placed(state, fp::place(state.world, patch), lob.owner, 0, static_cast<std::int16_t>(on.tile));
 }
 
+// An anvil falls (or lies on a slab for a moment). Crossing a surface it
+// breaks what it can; every surface at the highest top crossed is hit.
+void update_anvil(const Rules& rules, State& state, Object& o, fp::Events& scratch) {
+  if (o.rest > 0) {
+    if (--o.rest <= 0) o = {};
+    return;
+  }
+  for (const Object& g : state.objects) {  // gusts push anvils a little
+    if (g.kind != ObjectKind::Gust || g.arm > 0) continue;
+    const Fixed d = (o.pos.x - g.pos.x) * g.vel.x;
+    if (d >= Fixed::zero() && d <= kGustLen && fp::abs(o.pos.y - g.pos.y) < kGustHalfHeight) o.vel.x = o.vel.x + g.vel.x * kGustLobPush / Fixed::from_int(10);
+  }
+  const Fixed prev_bottom = o.pos.y;
+  o.pos.x = o.pos.x + o.vel.x;
+  o.vel.y = o.vel.y - kAnvilGravity;
+  if (o.vel.y < Fixed::zero() - kAnvilMaxFall) o.vel.y = Fixed::zero() - kAnvilMaxFall;
+  const Fixed new_bottom = o.pos.y + o.vel.y;
+  const Fixed left = o.pos.x - kAnvilHalfWidth, right = o.pos.x + kAnvilHalfWidth;
+  if (o.vel.y < Fixed::zero()) {
+    // A spring under it throws it back up.
+    for (std::size_t slot = 0; slot < state.world.placeables.size(); ++slot) {
+      const fp::Placeable& p = state.world.placeables[slot];
+      if (p.active == 0 || p.kind != fp::PlaceableKind::Spring || right <= p.rect.left || left >= p.rect.right) continue;
+      if (prev_bottom >= p.rect.bottom && new_bottom <= p.rect.top) {
+        o.vel.y = kSpringBounce;
+        o.pos.y = p.rect.top;
+        PlaceableMeta& m = state.meta[slot];
+        if (m.uses > 0 && --m.uses == 0) {
+          fp::remove_placeable(rules.engine, state.world, static_cast<int>(slot), scratch);
+          m = {};
+        }
+        return;
+      }
+    }
+    bool found = false;
+    Fixed top = Fixed::zero();
+    each_surface(rules, state, [&](const Surface& s) {
+      if (right <= s.left + fx100(60) || left >= s.right - fx100(60)) return;
+      if (prev_bottom >= s.top && new_bottom <= s.top && (!found || s.top > top)) {
+        top = s.top;
+        found = true;
+      }
+    });
+    if (found) {
+      bool stopped = false;
+      each_surface(rules, state, [&](const Surface& s) {
+        if (s.top != top || right <= s.left + fx100(60) || left >= s.right - fx100(60)) return;
+        if (s.tile < 0) {  // a wall under it is smashed
+          for (std::size_t slot = 0; slot < state.world.placeables.size(); ++slot) {
+            const fp::Placeable& p = state.world.placeables[slot];
+            if (p.active != 0 && p.kind == fp::PlaceableKind::Wall && p.rect.top == top && right > p.rect.left && left < p.rect.right) {
+              fp::remove_placeable(rules.engine, state.world, static_cast<int>(slot), scratch);
+              state.meta[slot] = {};
+            }
+          }
+          return;
+        }
+        damage_tile(rules, state, s.tile, 2, o.owner, scratch);
+        if (rules.slab_hp[static_cast<std::size_t>(s.tile)] != 0 && in_play(state.world.platforms[static_cast<std::size_t>(s.tile)].phase)) stopped = true;
+      });
+      ++o.breaks;
+      if (stopped) {
+        o.pos.y = top;
+        o.vel = {};
+        o.rest = kAnvilRestTicks;
+        return;
+      }
+      if (o.breaks >= kAnvilMaxBreaks) {
+        o = {};
+        return;
+      }
+      o.vel.y = o.vel.y * fx100(60);
+      o.vel.x = o.vel.x * fx100(50);
+    }
+  }
+  o.pos.y = o.pos.y + o.vel.y;
+  const fp::Rect& blast = rules.engine.stage.blast;
+  if (o.pos.y < blast.bottom) o = {};
+}
+
 }  // namespace
+
+bool in_play(fp::PlatformPhase p) {
+  return p == fp::PlatformPhase::Solid || p == fp::PlatformPhase::Shaking || p == fp::PlatformPhase::Doomed;
+}
+
+void damage_tile(const Rules& rules, State& state, int tile, int amount, int by, fp::Events& scratch) {
+  const auto t = static_cast<std::size_t>(tile);
+  if (!in_play(state.world.platforms[t].phase)) return;
+  if (rules.slab_hp[t] == 0) {
+    stress_tile(rules, state, tile, Fixed::one(), by, scratch);
+    return;
+  }
+  if (by >= 0) state.tile_blame[t] = {static_cast<std::int8_t>(by), static_cast<std::int32_t>(state.world.frame)};
+  state.slab_hp[t] = static_cast<std::int8_t>(state.slab_hp[t] - amount);
+  if (state.slab_hp[t] <= 0) stress_tile(rules, state, tile, Fixed::one(), by, scratch);
+}
 
 void stress_tile(const Rules& rules, State& state, int tile, Fixed amount, int by, fp::Events& scratch) {
   fp::add_stress(rules.engine, state.world, tile, amount, scratch);
@@ -174,6 +273,8 @@ void update_objects(const Rules& rules, State& state, fp::Events& scratch) {
         }
       }
       if (o.pos.y < blast.bottom || o.pos.x < blast.left || o.pos.x > blast.right) o = {};
+    } else if (o.kind == ObjectKind::Anvil) {
+      update_anvil(rules, state, o, scratch);
     } else if (o.kind == ObjectKind::Gust) {
       if (o.arm > 0) --o.arm;
       if (--o.timer <= 0) o = {};
@@ -181,7 +282,8 @@ void update_objects(const Rules& rules, State& state, fp::Events& scratch) {
       // Dissolves the tiles under it in under a second.
       each_surface(rules, state, [&](const Surface& s) {
         if (s.tile < 0 || s.top != o.pos.y || s.right <= o.x0 || s.left >= o.x1) return;
-        stress_tile(rules, state, s.tile, kAcidStress, o.owner, scratch);
+        if (rules.slab_hp[static_cast<std::size_t>(s.tile)] == 0) stress_tile(rules, state, s.tile, kAcidStress, o.owner, scratch);
+        else if ((kAcidLife - o.timer) % kAcidSlabEvery == 0) damage_tile(rules, state, s.tile, 1, o.owner, scratch);  // 1 hp per 0.8 s
       });
       if (--o.timer <= 0) o = {};
     }
@@ -267,11 +369,11 @@ void drill_landings(const Rules& rules, State& state, const fp::Events& events, 
     fp::EntityState& e = state.world.entities[static_cast<std::size_t>(ev.id)];
     const auto& platforms = rules.engine.stage.platforms;
     if (ev.other >= 0 && ev.other < static_cast<int>(platforms.size())) {
-      // The tile it landed on breaks; the tiles around it, in the same row, are stressed.
-      stress_tile(rules, state, ev.other, Fixed::one(), ev.id, scratch);
+      // The tile it landed on breaks (a slab takes 2 damage); the tiles around it, in the same row, are stressed.
+      damage_tile(rules, state, ev.other, 2, ev.id, scratch);
       for (std::size_t t = 0; t < platforms.size(); ++t) {
         if (static_cast<int>(t) == ev.other || platforms[t].rect.top != platforms[static_cast<std::size_t>(ev.other)].rect.top) continue;
-        if (!in_play(state.world.platforms[t].phase)) continue;
+        if (!in_play(state.world.platforms[t].phase) || rules.slab_hp[t] != 0) continue;
         const Fixed mid = (platforms[t].rect.left + platforms[t].rect.right) / Fixed::from_int(2);
         if (fp::abs(mid - e.pos.x) < kDrillReach) stress_tile(rules, state, static_cast<int>(t), kDrillNeighbourStress, ev.id, scratch);
       }
@@ -283,6 +385,51 @@ void drill_landings(const Rules& rules, State& state, const fp::Events& events, 
     e.vel.y = kDrillBounce;
     e.jumps_used = 0;
   }
+}
+
+}  // namespace ledgefall::detail
+
+namespace ledgefall::detail {
+
+bool cast_anvil(State& state, const Rules& rules, int seat, const Input& in) {
+  Object* o = nullptr;
+  for (Object& c : state.objects) {
+    if (c.kind == ObjectKind::None) {
+      o = &c;
+      break;
+    }
+  }
+  if (o == nullptr) return false;
+  const fp::EntityState& e = state.world.entities[static_cast<std::size_t>(seat)];
+  const fp::MovementParams& m = rules.engine.params[static_cast<std::size_t>(seat)];
+  const bool forward = (in.move_x > 25 && e.facing > 0) || (in.move_x < -25 && e.facing < 0);
+  *o = Object{ObjectKind::Anvil, static_cast<std::int8_t>(seat), Payload::Glue,
+              {e.pos.x + fx100(384 * e.facing), e.pos.y + m.body_height - fx100(450)},
+              {fx100((forward ? 160 : 112) * e.facing), fx100(160)}, {}, {}, 0, 0, 0, 0};
+  return true;
+}
+
+}  // namespace ledgefall::detail
+
+namespace ledgefall::detail {
+
+fp::Rect object_rect(const Object& o) {
+  switch (o.kind) {
+    case ObjectKind::Lob: {
+      const Fixed r = fx100(250);
+      return {o.pos.x - r, o.pos.x + r, o.pos.y - r, o.pos.y + r};
+    }
+    case ObjectKind::Acid:
+      return {o.x0, o.x1, o.pos.y, o.pos.y + fx100(120)};
+    case ObjectKind::Gust:
+      return o.vel.x > Fixed::zero() ? fp::Rect{o.pos.x, o.pos.x + kGustLen, o.pos.y - kGustHalfHeight, o.pos.y + kGustHalfHeight}
+                                     : fp::Rect{o.pos.x - kGustLen, o.pos.x, o.pos.y - kGustHalfHeight, o.pos.y + kGustHalfHeight};
+    case ObjectKind::Anvil:
+      return {o.pos.x - kAnvilHalfWidth, o.pos.x + kAnvilHalfWidth, o.pos.y, o.pos.y + kAnvilHeight};
+    case ObjectKind::None:
+      break;
+  }
+  return {};
 }
 
 }  // namespace ledgefall::detail

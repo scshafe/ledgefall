@@ -33,13 +33,30 @@ public struct EntityView {
 }
 
 public enum PlatformPhase: UInt8 {
-    case solid = 0, shaking, gone, destroyed
+    case solid = 0, shaking, gone, destroyed, doomed
 }
 
 public struct PlatformView {
     public var left: Float, right: Float, bottom: Float, top: Float
     public var phase: PlatformPhase
     public var timer: Int
+    /// A sturdy slab (hit points, never crumbles by standing) rather than a crumble tile.
+    public var sturdy: Bool
+    public var hp: Int
+    /// A tile's stress, 0...1.
+    public var stress: Float
+}
+
+public enum ThingKind: Int {
+    case wall = 0, spring, glue, oil, lob, acid, gust, anvil
+}
+
+/// A placeable or an object on the stage, as the box it is drawn in.
+public struct ThingView {
+    public var kind: ThingKind
+    public var left: Float, right: Float, bottom: Float, top: Float
+    public var owner: Int
+    public var armed: Bool
 }
 
 /// The characters (fighters), in the core's order.
@@ -49,6 +66,13 @@ public enum Fighter: Int, CaseIterable {
     public var name: String {
         ["Mason", "Glim", "Pip", "Fuse", "Dab", "Fern", "Ferro"][rawValue]
     }
+}
+
+/// The stages, in the core's order.
+public enum Arena: Int, CaseIterable {
+    case practice, yard, quarry
+
+    public var name: String { ["Practice", "Crumble Yard", "The Quarry"][rawValue] }
 }
 
 public struct PlayerView {
@@ -71,13 +95,14 @@ public final class Match {
     public let players: Int
 
     /// Nil unless `players` is 2...4 and `stocks` is 1...5.
-    public init?(players: Int, stocks: Int = 3, seed: UInt32 = 1, characters: [Fighter]? = nil) {
+    public init?(players: Int, stocks: Int = 3, seed: UInt32 = 1, characters: [Fighter]? = nil,
+                 arena: Arena = .practice) {
         let handle: OpaquePointer?
         if let characters, characters.count >= players {
             let raw = characters.prefix(players).map { UInt8($0.rawValue) }
-            handle = lf_match_create_with(Int32(players), Int32(stocks), seed, raw)
+            handle = lf_match_create_with(Int32(players), Int32(stocks), seed, raw, Int32(arena.rawValue))
         } else {
-            handle = lf_match_create_with(Int32(players), Int32(stocks), seed, nil)
+            handle = lf_match_create_with(Int32(players), Int32(stocks), seed, nil, Int32(arena.rawValue))
         }
         guard let h = handle else { return nil }
         self.handle = h
@@ -146,7 +171,19 @@ public final class Match {
         return PlatformView(
             left: Float(p.left) / Match.fixedOne, right: Float(p.right) / Match.fixedOne,
             bottom: Float(p.bottom) / Match.fixedOne, top: Float(p.top) / Match.fixedOne,
-            phase: PlatformPhase(rawValue: p.phase) ?? .destroyed, timer: Int(p.timer))
+            phase: PlatformPhase(rawValue: p.phase) ?? .destroyed, timer: Int(p.timer),
+            sturdy: p.sturdy != 0, hp: Int(p.hp), stress: Float(p.stress) / Match.fixedOne)
+    }
+
+    public var thingCount: Int { Int(lf_match_thing_count(handle)) }
+
+    public func thing(_ index: Int) -> ThingView? {
+        var t = lf_thing()
+        guard lf_match_thing(handle, Int32(index), &t) != 0, let kind = ThingKind(rawValue: Int(t.kind)) else { return nil }
+        let one = Match.fixedOne
+        return ThingView(
+            kind: kind, left: Float(t.left) / one, right: Float(t.right) / one,
+            bottom: Float(t.bottom) / one, top: Float(t.top) / one, owner: Int(t.owner), armed: t.armed != 0)
     }
 
     /// The blast zone as (left, right, bottom, top).

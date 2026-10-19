@@ -45,6 +45,24 @@ final class MatchTests: XCTestCase {
         XCTAssertNotNil(Match(players: 3, characters: [.mason]))  // a short list falls back to the defaults
     }
 
+    func testThingsStartEmptyAndSlabsAreSturdy() throws {
+        let match = try XCTUnwrap(Match(players: 2, arena: .yard))
+        XCTAssertEqual(match.thingCount, 0)
+        let sturdy = (0..<match.platformCount).compactMap { match.platform($0) }.filter { $0.sturdy }
+        XCTAssertEqual(sturdy.count, 3)
+        XCTAssertEqual(sturdy.first?.hp, 4)
+    }
+
+    func testStages() throws {
+        for arena in Arena.allCases {
+            let match = try XCTUnwrap(Match(players: 4, arena: arena))
+            XCTAssertGreaterThan(match.platformCount, 10)
+        }
+        let yard = try XCTUnwrap(Match(players: 2, arena: .yard))
+        let practice = try XCTUnwrap(Match(players: 2, arena: .practice))
+        XCTAssertNotEqual(yard.platformCount, practice.platformCount)
+    }
+
     func testSameInputsSameHash() throws {
         func run() throws -> UInt64 {
             let match = try XCTUnwrap(Match(players: 2))

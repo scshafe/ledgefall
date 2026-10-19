@@ -44,11 +44,16 @@ enum class Character : std::uint8_t { Mason, Glim, Pip, Fuse, Dab, Fern, Ferro }
 constexpr int kCharacterCount = 7;
 constexpr int kMoveSlots = 3;
 
+// The stages (lost-footing's, "Stages and hazards"; Practice is a plain three-tier test floor).
+enum class StageId : std::uint8_t { Practice, Yard, Quarry };
+constexpr int kStageCount = 3;
+
 // What a match is set up with (the lobby's choices).
 struct Setup {
   int players = 2;
   int stocks = kDefaultStocks;
   std::uint32_t seed = 1;  // the match's one random stream (the lobby picks it)
+  StageId stage = StageId::Practice;
   std::array<Character, kMaxPlayers> characters{Character::Mason, Character::Glim, Character::Pip, Character::Fuse};
 };
 
@@ -58,7 +63,8 @@ bool valid(const Setup& s) noexcept;
 struct Rules {
   Setup setup;
   fp::Config engine;  // the stage and each seat's movement parameters
-  std::vector<fp::Vec2> spawns;  // where eliminated players come back, by index
+  std::vector<fp::Vec2> spawns;  // where eliminated players come back, by index; seat i starts at spawns[i]
+  std::vector<std::uint8_t> slab_hp;  // per stage platform: hit points of a sturdy slab, 0 for a crumble tile
 };
 
 // Nullopt if the setup is not valid.
@@ -118,7 +124,7 @@ constexpr int kMaxPending = 16;
 
 // Things in flight or at work that the engine has no slot for: a lob on its
 // way down, an acid puddle eating tiles, a gust blowing. Fixed-point plain data like the rest.
-enum class ObjectKind : std::uint8_t { None, Lob, Acid, Gust };
+enum class ObjectKind : std::uint8_t { None, Lob, Acid, Gust, Anvil };
 enum class Payload : std::uint8_t { Glue, Oil, Acid };  // what a lob carries
 
 struct Object {
@@ -130,10 +136,12 @@ struct Object {
   fp::Fixed x0{}, x1{};     // an acid puddle's extent
   std::int16_t timer = 0;   // ticks left (an acid puddle, a gust)
   std::int16_t arm = 0;     // ticks until it acts (a gust spins up first)
+  std::int8_t breaks = 0;   // an anvil: tiles it has broken so far
+  std::int16_t rest = 0;    // an anvil: ticks left lying on a slab, 0 while it falls
 };
 
 constexpr int kMaxObjects = 16;
-constexpr int kMaxTiles = 64;  // platforms the stage may have (side tables are this long)
+constexpr int kMaxTiles = 96;  // platforms the stage may have (side tables are this long)
 
 // Who last put stress on a tile, so a player it drops is credited to them.
 struct TileBlame {
@@ -154,6 +162,7 @@ struct State {
   std::array<Pending, kMaxPending> pending{};
   std::array<Object, kMaxObjects> objects{};
   std::array<TileBlame, kMaxTiles> tile_blame{};  // by stage platform
+  std::array<std::int8_t, kMaxTiles> slab_hp{};   // by stage platform: hit points left of a sturdy slab
 };
 
 State make_state(const Rules& rules);

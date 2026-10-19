@@ -31,6 +31,19 @@ bool cast(const Rules& rules, State& state, int seat, int slot, const Input& in,
 // whoever it drops is credited to them.
 void stress_tile(const Rules& rules, State& state, int tile, fp::Fixed amount, int by, fp::Events& scratch);
 
+// Hurt a tile: a crumble tile breaks outright, a sturdy slab loses `amount` hit
+// points and breaks at 0 (back after its respawn time, whole). `by` is credited
+// (-1 for the stage itself).
+void damage_tile(const Rules& rules, State& state, int tile, int amount, int by, fp::Events& scratch);
+
+// Whether a stage platform is up (solid, shaking or doomed).
+bool in_play(fp::PlatformPhase p);
+
+// The box an object is drawn (and, for a gust, felt) in.
+fp::Rect object_rect(const Object& o);
+
+bool cast_anvil(State& state, const Rules& rules, int seat, const Input& in);
+
 // Keep at most `max` placeables of a kind per owner: the oldest goes.
 void limit_owned(const Rules& rules, State& state, int seat, fp::PlaceableKind kind, int max, fp::Events& events);
 
@@ -59,7 +72,7 @@ void after_step(const Rules& rules, State& state, const fp::Events& events, fp::
 
 // Tiles that crumbled (in the engine's events, or in ones our own stress caused)
 // count as broken for whoever stressed them last and credit whoever they drop.
-void credit_crumbles(State& state, const fp::Events& events, const std::vector<std::int16_t>& support_before);
+void credit_crumbles(const Rules& rules, State& state, const fp::Events& events, const std::vector<std::int16_t>& support_before);
 
 // Contact between players (stomps and bumps), from the engine's events and the
 // velocities before the step.

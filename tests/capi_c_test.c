@@ -18,9 +18,10 @@ int main(void) {
   CHECK(lf_match_create(2, 6) == NULL);
 
   const uint8_t bad_chars[2] = {LF_CHARACTER_PIP, 99};
-  CHECK(lf_match_create_with(2, 3, 5, bad_chars) == NULL);
+  CHECK(lf_match_create_with(2, 3, 5, bad_chars, LF_STAGE_PRACTICE) == NULL);
   const uint8_t pips[4] = {LF_CHARACTER_PIP, LF_CHARACTER_PIP, LF_CHARACTER_FERN, LF_CHARACTER_FERRO};
-  lf_match* chosen = lf_match_create_with(4, 3, 9, pips);
+  lf_match* chosen = lf_match_create_with(4, 3, 9, pips, LF_STAGE_QUARRY);
+  CHECK(lf_match_create_with(4, 3, 9, pips, 99) == NULL);
   CHECK(chosen != NULL);
   lf_player cp;
   CHECK(lf_match_player(chosen, 2, &cp) && cp.character == LF_CHARACTER_FERN);
@@ -40,6 +41,9 @@ int main(void) {
   lf_platform plat;
   CHECK(lf_match_platform(m, 0, &plat) && plat.left < plat.right && plat.bottom < plat.top);
   CHECK(!lf_match_platform(m, lf_match_platform_count(m), &plat));
+  CHECK(lf_match_thing_count(m) == 0);
+  lf_thing th;
+  CHECK(!lf_match_thing(m, 0, &th));
   int32_t blast[4];
   lf_match_blast(m, blast);
   CHECK(blast[0] < blast[1] && blast[2] < blast[3]);

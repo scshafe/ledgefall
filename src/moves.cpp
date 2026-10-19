@@ -138,6 +138,7 @@ bool cast(const Rules& rules, State& state, int seat, int slot, const Input& in,
   switch (c) {
     case Character::Mason:
       if (slot == 0) done = cast_wall(rules, state, seat, events);
+      else if (slot == 2) done = cast_anvil(state, rules, seat, in);
       break;
     case Character::Pip:
       if (slot == 0) done = cast_spring(rules, state, seat, in, events);
@@ -204,13 +205,18 @@ void after_step(const Rules& rules, State& state, const fp::Events& events, fp::
   }
 }
 
-void credit_crumbles(State& state, const fp::Events& events, const std::vector<std::int16_t>& support_before) {
+void credit_crumbles(const Rules& rules, State& state, const fp::Events& events, const std::vector<std::int16_t>& support_before) {
   for (const fp::Event& e : events) {
+    if (e.type == fp::EventType::PlatformRespawned) {
+      state.slab_hp[static_cast<std::size_t>(e.id)] = static_cast<std::int8_t>(rules.slab_hp[static_cast<std::size_t>(e.id)]);
+      continue;
+    }
     if (e.type != fp::EventType::PlatformCrumbled) continue;
     // A tile someone stressed: they are credited with it, and with whoever it drops.
     TileBlame& tb = state.tile_blame[static_cast<std::size_t>(e.id)];
     if (tb.by >= 0 && static_cast<std::int32_t>(state.world.frame) - tb.tick <= kBlameWindowTicks) {
-      ++state.players[static_cast<std::size_t>(tb.by)].stats.tiles_broken;
+      Stats& st = state.players[static_cast<std::size_t>(tb.by)].stats;
+      ++(rules.slab_hp[static_cast<std::size_t>(e.id)] != 0 ? st.slabs_broken : st.tiles_broken);
       for (std::size_t i = 0; i < support_before.size(); ++i) {
         if (support_before[i] == e.id) blame(state, static_cast<int>(i), tb.by);
       }

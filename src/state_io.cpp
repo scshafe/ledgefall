@@ -12,7 +12,7 @@
 namespace ledgefall {
 namespace {
 
-constexpr std::uint8_t kMagic0 = 'L', kMagic1 = 'F', kVersion = 4;
+constexpr std::uint8_t kMagic0 = 'L', kMagic1 = 'F', kVersion = 5;
 constexpr std::size_t kHeaderBytes = 3;
 
 // An integer or an enum, as the unsigned integer of its own width.
@@ -139,11 +139,14 @@ void io_state(A& a, State& s) {
     a.fx(o.x1);
     a.num(o.timer);
     a.num(o.arm);
+    a.num(o.breaks);
+    a.num(o.rest);
   }
   for (TileBlame& t : s.tile_blame) {
     a.num(t.by);
     a.num(t.tick);
   }
+  for (std::int8_t& hp : s.slab_hp) a.num(hp);
 }
 
 bool plausible(const Rules& rules, const State& s) {
@@ -170,12 +173,16 @@ bool plausible(const Rules& rules, const State& s) {
     if (p.used && p.owner < 0) return false;
   }
   for (const Object& o : s.objects) {
-    if (static_cast<int>(o.kind) > static_cast<int>(ObjectKind::Gust) || static_cast<int>(o.payload) > static_cast<int>(Payload::Acid)) return false;
-    if (o.owner < -1 || o.owner >= n || o.timer < 0 || o.arm < 0) return false;
+    if (static_cast<int>(o.kind) > static_cast<int>(ObjectKind::Anvil) || static_cast<int>(o.payload) > static_cast<int>(Payload::Acid)) return false;
+    if (o.owner < -1 || o.owner >= n || o.timer < 0 || o.arm < 0 || o.breaks < 0 || o.rest < 0) return false;
     if (o.kind != ObjectKind::None && o.owner < 0) return false;
   }
   for (const TileBlame& t : s.tile_blame) {
     if (t.by < -1 || t.by >= n) return false;
+  }
+  for (std::size_t i = 0; i < s.slab_hp.size(); ++i) {
+    const int max = i < rules.slab_hp.size() ? rules.slab_hp[i] : 0;
+    if (s.slab_hp[i] > max || s.slab_hp[i] < -8 || (max == 0 && s.slab_hp[i] != 0)) return false;
   }
   return true;
 }

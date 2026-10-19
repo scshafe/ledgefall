@@ -22,7 +22,7 @@ final class AppModel: ObservableObject {
     }
 
     private static func demoMatch() -> Match {
-        guard let match = Match(players: 4, stocks: 3) else { fatalError("could not create a match") }
+        guard let match = Match(players: 4, stocks: 3, arena: .yard) else { fatalError("could not create a match") }
         for seat in 0..<4 { match.setBot(seat: seat, level: .normal) }
         return match
     }
@@ -47,7 +47,7 @@ final class AppModel: ObservableObject {
     }
 
     private func startMatch() {
-        guard let match = Match(players: flow.players, stocks: flow.stocks) else { return }
+        guard let match = Match(players: flow.players, stocks: flow.stocks, arena: .yard) else { return }
         for seat in 0..<flow.players { match.setBot(seat: seat, level: .normal) }
         seating.limit(to: flow.players)
         // Devices that kept their seats stay people.
