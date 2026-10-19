@@ -138,6 +138,44 @@ void test_collapse_wears_slabs_down() {
   CHECK(s.slab_hp[kSlab] == before - 1);
 }
 
+void test_sinking_ship_decks_heave_out_of_step() {
+  Setup su;
+  su.stage = StageId::Swell;
+  su.players = 2;
+  const Rules r = *make_rules(su);
+  State s = make_state(r);
+  const std::size_t left = 0, right = 12;  // the two halves of the long deck
+  Fixed lo = Fixed::from_int(1000), hi = Fixed::from_int(-1000);
+  bool apart = false;
+  for (int t = 0; t < 600; ++t) {
+    std::vector<Input> none(2);
+    step(r, s, none);
+    if (t < 3) continue;
+    const Fixed y = s.world.platforms[left].offset.y;
+    if (y < lo) lo = y;
+    if (y > hi) hi = y;
+    apart = apart || fp::abs(y - s.world.platforms[right].offset.y) > Fixed::from_int(8);
+  }
+  CHECK(hi - lo > Fixed::from_int(14) && hi - lo < Fixed::from_int(20));  // 2 x 34 px x 0.26
+  CHECK(apart);
+
+  // Whoever stands on a deck rides it.
+  State on = make_state(r);
+  on.world.entities[0] = fp::spawn_on(r.engine, 5, r.engine.stage.platforms[5].rect.left + Fixed::from_int(4));
+  const Fixed y0 = on.world.entities[0].pos.y;
+  Fixed top = y0;
+  for (int t = 0; t < 120; ++t) {
+    for (fp::PlatformState& p : on.world.platforms) {
+      p.phase = p.phase == fp::PlatformPhase::Gone ? fp::PlatformPhase::Solid : p.phase;
+      p.stress = Fixed::zero();
+    }
+    std::vector<Input> none(2);
+    step(r, on, none);
+    if (on.world.entities[0].pos.y > top) top = on.world.entities[0].pos.y;
+  }
+  CHECK(fp::abs(top - y0) > Fixed::from_int(3));
+}
+
 void test_slab_state_round_trips() {
   const Rules r = yard();
   State s = make_state(r);
@@ -161,6 +199,7 @@ int main() {
   test_anvil_damages_a_slab_and_it_returns();
   test_masons_throw_lands_an_anvil_ahead();
   test_collapse_wears_slabs_down();
+  test_sinking_ship_decks_heave_out_of_step();
   test_slab_state_round_trips();
   return test::finish();
 }

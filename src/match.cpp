@@ -133,6 +133,7 @@ State make_state(const Rules& rules) {
   s.world = fp::make_world(rules.engine);
   const int n = rules.setup.players;
   for (std::size_t t = 0; t < rules.slab_hp.size(); ++t) s.slab_hp[t] = static_cast<std::int8_t>(rules.slab_hp[t]);
+  for (std::size_t t = 0; t < rules.start_clock.size(); ++t) s.world.platforms[t].clock = rules.start_clock[t];
   for (std::size_t h = 0; h < rules.hazards.size(); ++h) s.hazards.timers[h] = static_cast<std::int16_t>(300 + 90 * h);
   for (const HazardSpec& h : rules.hazards) {
     if (h.type == HazardType::Tide) s.hazards.tide_level = h.low;

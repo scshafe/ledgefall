@@ -46,8 +46,8 @@ constexpr int kCharacterCount = 7;
 constexpr int kMoveSlots = 3;
 
 // The stages (lost-footing's, "Stages and hazards"; Practice is a plain three-tier test floor).
-enum class StageId : std::uint8_t { Practice, Yard, Quarry, Tide, Gale };
-constexpr int kStageCount = 5;
+enum class StageId : std::uint8_t { Practice, Yard, Quarry, Tide, Gale, Swell };
+constexpr int kStageCount = 6;
 
 // What a match is set up with (the lobby's choices).
 struct Setup {
@@ -86,6 +86,7 @@ struct Rules {
   std::vector<fp::Vec2> spawns;  // where eliminated players come back, by index; seat i starts at spawns[i]
   std::vector<std::uint8_t> slab_hp;  // per stage platform: hit points of a sturdy slab, 0 for a crumble tile
   std::vector<HazardSpec> hazards;
+  std::vector<std::int32_t> start_clock;  // per stage platform: where its motion cycle starts
 };
 
 // Nullopt if the setup is not valid.

@@ -44,10 +44,26 @@ fp::PlatformStress slab_stress() {
 struct Builder {
   Rules& r;
 
+  // A row that heaves: it rides between `amp` below and `amp` above its height (lost-footing's
+  // sine, as the engine's there-and-back linear motion), `period` ticks a cycle, `phase_percent`
+  // of a cycle along.
+  struct Bob {
+    int amp_px = 0, period = 0, phase_percent = 0;
+  };
+  Bob bob{};
+
   void tile(Fixed left, Fixed right, Fixed top) {
     fp::PlatformDef p;
+    if (bob.period > 0) {
+      const Fixed amp = fx100(bob.amp_px * 26);
+      p.rect = {left, right, top - amp - Fixed::from_int(kTileThickness), top - amp};
+      p.travel = {Fixed::zero(), amp * Fixed::from_int(2)};
+      p.move_period = bob.period;
+      r.start_clock.resize(r.engine.stage.platforms.size(), 0);
+      r.start_clock.push_back(bob.period * bob.phase_percent / 100 % bob.period);
+    }
     p.kind = fp::PlatformKind::PassThrough;
-    p.rect = {left, right, top - Fixed::from_int(kTileThickness), top};
+    if (bob.period == 0) p.rect = {left, right, top - Fixed::from_int(kTileThickness), top};
     p.stress = tile_stress();
     p.respawn_frames = kTileRespawnTicks;
     r.engine.stage.platforms.push_back(p);
@@ -166,6 +182,27 @@ void tide(Rules& r) {  // "Tide Pools": low stone islands, until the tide comes 
   b.comet({530}, 540, 840, 90, 750);
 }
 
+void swell(Rules& r) {  // "Sinking Ship": decks heave on the swell, halves out of step
+  Builder b{r};
+  struct Row {
+    int x, y, n, amp, period, phase_percent;
+  };
+  // Lost-footing's phases are radians: 0, pi, 1, 1 + pi, 0.5, 2 (as shares of a cycle).
+  for (const Row& row : {Row{220, 640, 12, 34, 540, 0}, {820, 640, 12, 34, 540, 50}, {380, 510, 5, 28, 420, 16},
+                         {980, 510, 5, 28, 420, 66}, {620, 380, 7, 36, 600, 8}, {700, 250, 4, 22, 360, 32}}) {
+    b.bob = {row.amp, row.period, row.phase_percent};
+    b.row(row.x, row.y, row.n);
+  }
+  b.bob = {};
+  b.slab_px(700, 780, 200);
+  b.slab_px(130, 420, 130);
+  b.slab_px(1340, 420, 130);
+  b.blast();
+  b.spawn(470, 440), b.spawn(1130, 440), b.spawn(800, 300), b.spawn(800, 180);
+  b.tide(720, 900, 120, 150, 240, 150, 960, 735);
+  b.comet({420}, 540, 840, 90, 750);
+}
+
 void gale(Rules& r) {  // "Gale Bridge": one long bridge over nothing
   Builder b{r};
   for (auto [x, y, n] : {std::array{200, 640, 25}, {360, 500, 4}, {1048, 500, 4}, {640, 420, 7}, {420, 280, 4},
@@ -201,8 +238,10 @@ std::optional<Rules> make_rules(const Setup& setup) {
     case StageId::Quarry: quarry(r); break;
     case StageId::Tide: tide(r); break;
     case StageId::Gale: gale(r); break;
+    case StageId::Swell: swell(r); break;
   }
   for (int i = 0; i < setup.players; ++i) r.engine.params.push_back(detail::movement_for(setup.characters[static_cast<std::size_t>(i)]));
+  r.start_clock.resize(r.engine.stage.platforms.size(), 0);
   if (r.engine.stage.platforms.size() > static_cast<std::size_t>(kMaxTiles) || r.hazards.size() > static_cast<std::size_t>(kMaxHazardSpecs)) return std::nullopt;
   return r;
 }
