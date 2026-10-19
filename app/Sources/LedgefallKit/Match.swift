@@ -60,7 +60,8 @@ public final class Match {
     /// Make a seat a bot, or a human again with nil.
     @discardableResult
     public func setBot(seat: Int, level: BotLevel?) -> Bool {
-        lf_match_set_bot(handle, Int32(seat), level?.rawValue ?? -1  // LF_BOT_NONE) != 0
+        // -1 is LF_BOT_NONE.
+        lf_match_set_bot(handle, Int32(seat), level?.rawValue ?? -1) != 0
     }
 
     /// Advance one tick; `inputs` has one entry per seat (a bot seat's entry is ignored).
