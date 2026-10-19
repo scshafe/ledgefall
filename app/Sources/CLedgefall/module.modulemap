@@ -1,0 +1,7 @@
+module CLedgefall [system] {
+    header "../../../include/ledgefall/capi.h"
+    link "ledgefall_core"
+    link "fighter_physics"
+    link "c++"
+    export *
+}

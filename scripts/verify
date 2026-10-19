@@ -3,6 +3,14 @@
 # and run every test with CMake and CTest. CI runs the same command.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+# The core is linked into the app, so it targets the app's macOS floor (app/Package.swift).
+extra=()
+if [ "$(uname)" = Darwin ]; then extra=(-DCMAKE_OSX_DEPLOYMENT_TARGET=13.0); fi
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug ${extra[@]+"${extra[@]}"}
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
+
+# The macOS app builds only on macOS (CI's macos job, the owner's Mac).
+if [ "$(uname)" = Darwin ]; then
+  ./scripts/build-app
+fi

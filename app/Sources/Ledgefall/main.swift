@@ -1,0 +1,68 @@
+import AppKit
+import LedgefallKit
+import MetalKit
+
+// A MTKView that takes keyboard focus and records which keys are held.
+final class GameView: MTKView {
+    private(set) var held = Set<UInt16>()
+
+    override var acceptsFirstResponder: Bool { true }
+
+    override func keyDown(with event: NSEvent) { held.insert(event.keyCode) }
+    override func keyUp(with event: NSEvent) { held.remove(event.keyCode) }
+    // Keys held when the window loses focus would otherwise stay "held".
+    override func resignFirstResponder() -> Bool {
+        held.removeAll()
+        return super.resignFirstResponder()
+    }
+}
+
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var window: NSWindow?
+    private var renderer: Renderer?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // Seat 0 is the person on the arrow keys; the other seats are bots.
+        guard let match = Match(players: 4, stocks: 3) else { fatalError("could not create a match") }
+        for seat in 1..<4 { match.setBot(seat: seat, level: .normal) }
+        let loop = GameLoop(match: match)
+
+        let rect = NSRect(x: 0, y: 0, width: 1280, height: 720)
+        let view = GameView(frame: rect, device: MTLCreateSystemDefaultDevice())
+        view.preferredFramesPerSecond = 60
+        view.colorPixelFormat = .bgra8Unorm
+        guard let renderer = Renderer(view: view, loop: loop, inputs: { [unowned view] in
+            [KeyLayout.arrows.input(held: view.held)]
+        }) else { fatalError("Metal is not available") }
+        view.delegate = renderer
+        self.renderer = renderer
+
+        let window = NSWindow(contentRect: rect, styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                              backing: .buffered, defer: false)
+        window.title = "Ledgefall"
+        window.contentView = view
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        window.makeFirstResponder(view)
+        self.window = window
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+}
+
+let app = NSApplication.shared
+app.setActivationPolicy(.regular)
+
+// A minimal menu so Cmd-Q quits.
+let mainMenu = NSMenu()
+let appItem = NSMenuItem()
+mainMenu.addItem(appItem)
+let appMenu = NSMenu()
+appMenu.addItem(withTitle: "Quit Ledgefall", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+appItem.submenu = appMenu
+app.mainMenu = mainMenu
+
+let delegate = AppDelegate()
+app.delegate = delegate
+app.run()

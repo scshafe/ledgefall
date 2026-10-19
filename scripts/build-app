@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Build and test the macOS app (app/, a Swift package over the core's C face).
+# macOS only. It needs the core built first: ./scripts/verify does that, then
+# calls this on a Mac. The package finds the core's static libraries through the
+# linker flags below; Package.swift cannot name CMake's build directory.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+root=$PWD
+build="${LEDGEFALL_BUILD_DIR:-$root/build}"
+
+if [ "$(uname)" != Darwin ]; then
+  echo "build-app: the macOS app builds only on macOS" >&2
+  exit 1
+fi
+
+flags=(
+  -Xlinker -L"$build"
+  -Xlinker -L"$build/_deps/fighter_physics-build"
+)
+cd app
+swift build "${flags[@]}"
+swift test "${flags[@]}"
