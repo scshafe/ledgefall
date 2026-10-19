@@ -141,6 +141,7 @@ int lf_match_thing_count(const lf_match* m) {
   int n = 0;
   for (const fp::Placeable& p : m->state.world.placeables) n += p.active != 0 ? 1 : 0;
   for (const Object& o : m->state.objects) n += o.kind != ObjectKind::None ? 1 : 0;
+  for (const HazardItem& h : m->state.hazards.list) n += h.kind != HazardKind::None ? 1 : 0;
   return n;
 }
 
@@ -182,7 +183,34 @@ int lf_match_thing(const lf_match* m, int index, lf_thing* out) {
     out->armed = o.arm == 0 ? 1 : 0;
     return 1;
   }
+  for (const HazardItem& h : m->state.hazards.list) {
+    if (h.kind == HazardKind::None || at++ != index) continue;
+    const fp::Fixed w = detail::fx100(h.kind == HazardKind::Rock || h.kind == HazardKind::RockWarn ? 960 : 832);
+    // A comet's warning is a stripe across the lane; a rock's, a column down from the top.
+    const fp::Rect& b = m->rules.engine.stage.blast;
+    fp::Rect r{h.pos.x - w, h.pos.x + w, h.pos.y - w, h.pos.y + w};
+    if (h.kind == HazardKind::CometWarn) r = {b.left, b.right, h.pos.y - detail::fx100(100), h.pos.y + detail::fx100(100)};
+    if (h.kind == HazardKind::RockWarn) r = {h.pos.x - w, h.pos.x + w, b.bottom, b.top};
+    out->kind = h.kind == HazardKind::Comet ? LF_THING_COMET : h.kind == HazardKind::Rock ? LF_THING_ROCK
+                : h.kind == HazardKind::CometWarn ? LF_THING_COMET_WARN : LF_THING_ROCK_WARN;
+    out->left = r.left.raw();
+    out->right = r.right.raw();
+    out->bottom = r.bottom.raw();
+    out->top = r.top.raw();
+    out->owner = h.redirected_by;
+    out->armed = 1;
+    return 1;
+  }
   return 0;
+}
+
+void lf_match_weather(const lf_match* m, lf_weather* out) {
+  if (m == nullptr || out == nullptr) return;
+  const Hazards& h = m->state.hazards;
+  out->tide_phase = static_cast<int32_t>(h.tide);
+  out->tide_level = h.tide_level.raw();
+  out->gale_phase = static_cast<int32_t>(h.gale);
+  out->gale_dir = h.gale_dir;
 }
 
 void lf_match_blast(const lf_match* m, int32_t out[4]) {

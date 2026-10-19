@@ -43,6 +43,9 @@ void vertical_contacts(const Rules& rules, State& state, const fp::Events& event
       continue;
     }
     const auto u = static_cast<std::size_t>(upper), l = static_cast<std::size_t>(lower);
+    const PlayerState& pu = state.players[u];
+    const PlayerState& pl = state.players[l];
+    if (pu.invuln > 0 || pl.invuln > 0 || pu.no_contact > 0 || pl.no_contact > 0) continue;  // untouchable for now
     // y is up: falling is negative. The closing speed is how much faster the upper body goes down.
     const Fixed closing = vel_before[l].y - vel_before[u].y;
     if (closing < kStompSpeed) continue;  // gentle: the engine lets it ride

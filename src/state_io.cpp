@@ -12,7 +12,7 @@
 namespace ledgefall {
 namespace {
 
-constexpr std::uint8_t kMagic0 = 'L', kMagic1 = 'F', kVersion = 8;
+constexpr std::uint8_t kMagic0 = 'L', kMagic1 = 'F', kVersion = 9;
 constexpr std::size_t kHeaderBytes = 3;
 
 // An integer or an enum, as the unsigned integer of its own width.
@@ -78,6 +78,8 @@ void io_player(A& a, PlayerState& p) {
   for (auto& c : p.cooldown) a.num(c);
   a.num(p.prev_buttons);
   a.num(p.slow);
+  a.num(p.invuln);
+  a.num(p.no_contact);
   a.num(p.drill);
   a.num(p.blame_by);
   a.num(p.blame_tick);
@@ -152,6 +154,24 @@ void io_state(A& a, State& s) {
     a.num(t.tick);
   }
   for (std::int8_t& hp : s.slab_hp) a.num(hp);
+  for (auto& t : s.hazards.timers) a.num(t);
+  for (HazardItem& h : s.hazards.list) {
+    a.num(h.kind);
+    a.num(h.dir);
+    a.num(h.redirected_by);
+    a.fx(h.pos.x);
+    a.fx(h.pos.y);
+    a.fx(h.vel.x);
+    a.fx(h.vel.y);
+    a.num(h.timer);
+    for (auto& c : h.cool) a.num(c);
+  }
+  a.num(s.hazards.tide);
+  a.num(s.hazards.tide_timer);
+  a.fx(s.hazards.tide_level);
+  a.num(s.hazards.gale);
+  a.num(s.hazards.gale_dir);
+  a.num(s.hazards.gale_timer);
 }
 
 bool plausible(const Rules& rules, const State& s) {
@@ -161,7 +181,7 @@ bool plausible(const Rules& rules, const State& s) {
     for (auto c : p.cooldown) {
       if (c < 0 || c > 20 * kTicksPerSecond) return false;
     }
-    if ((p.prev_buttons & ~kButtonMask) != 0 || p.slow < 0 || p.slow > 10 * kTicksPerSecond || p.drill < -1 || p.drill > 20) return false;
+    if ((p.prev_buttons & ~kButtonMask) != 0 || p.slow < 0 || p.slow > 10 * kTicksPerSecond || p.drill < -1 || p.drill > 20 || p.invuln < 0 || p.no_contact < 0) return false;
     if (p.blame_by < -1 || p.blame_by >= n || p.place < 0 || p.place > n) return false;
   }
   if (s.winner < -1 || s.winner >= n) return false;
@@ -192,6 +212,18 @@ bool plausible(const Rules& rules, const State& s) {
   }
   for (const TileBlame& t : s.tile_blame) {
     if (t.by < -1 || t.by >= n) return false;
+  }
+  for (const HazardItem& h : s.hazards.list) {
+    if (static_cast<int>(h.kind) > static_cast<int>(HazardKind::Rock) || h.redirected_by < -1 || h.redirected_by >= n || h.timer < 0) return false;
+    if (h.dir < -1 || h.dir > 1) return false;
+    for (auto c : h.cool) {
+      if (c < 0) return false;
+    }
+  }
+  if (static_cast<int>(s.hazards.tide) > static_cast<int>(TidePhase::Fall) || static_cast<int>(s.hazards.gale) > static_cast<int>(GalePhase::Blow)) return false;
+  if (s.hazards.tide_timer < 0 || s.hazards.gale_timer < 0 || s.hazards.gale_dir < -1 || s.hazards.gale_dir > 1) return false;
+  for (auto t : s.hazards.timers) {
+    if (t < 0) return false;
   }
   for (std::size_t i = 0; i < s.slab_hp.size(); ++i) {
     const int max = i < rules.slab_hp.size() ? rules.slab_hp[i] : 0;

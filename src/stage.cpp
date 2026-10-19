@@ -72,6 +72,39 @@ struct Builder {
     for (int i = 0; i < n; ++i) tile(x(px_x + i * 48), x(px_x + (i + 1) * 48), y(px_y));
   }
   void slab_px(int px_x, int px_y, int w, int hp = kSlabHp) { slab(x(px_x), x(px_x + w), y(px_y), hp); }
+  // Hazards, in lost-footing's units (pixels; ticks).
+  void comet(std::initializer_list<int> lane_px, int lo, int hi, int warn, int speed_hundredths_px) {
+    HazardSpec h;
+    h.type = HazardType::Comet;
+    h.every_lo = lo, h.every_hi = hi, h.warn = warn;
+    for (int l : lane_px) h.lanes.push_back(y(l));
+    h.speed = fx100(speed_hundredths_px * 32 / 100);
+    r.hazards.push_back(h);
+  }
+  void rockfall(int lo, int hi, int warn, int bias_percent) {
+    HazardSpec h;
+    h.type = HazardType::Rockfall;
+    h.every_lo = lo, h.every_hi = hi, h.warn = warn;
+    h.sturdy_bias = fx100(bias_percent);
+    r.hazards.push_back(h);
+  }
+  void tide(int lo, int hi, int warn, int rise, int hold, int fall, int low_px, int high_px) {
+    HazardSpec h;
+    h.type = HazardType::Tide;
+    h.every_lo = lo, h.every_hi = hi, h.warn = warn;
+    h.rise = rise, h.hold = hold, h.fall = fall;
+    h.low = y(low_px), h.high = y(high_px);
+    r.hazards.push_back(h);
+  }
+  void gale(int lo, int hi, int warn, int duration, int force_thousandths_px) {
+    HazardSpec h;
+    h.type = HazardType::Gale;
+    h.every_lo = lo, h.every_hi = hi, h.warn = warn;
+    h.duration = duration;
+    h.force = fx100(force_thousandths_px * 32 / 1000);
+    r.hazards.push_back(h);
+  }
+
   void spawn(int px_x, int px_y) { r.spawns.push_back({x(px_x), y(px_y)}); }
   void blast() { r.engine.stage.blast = {x(-260), x(1860), y(980), y(-420)}; }
 };
@@ -101,6 +134,7 @@ void yard(Rules& r) {  // "Crumble Yard": brick tiers over a pit
   b.slab_px(1320, 470, 130);
   b.blast();
   b.spawn(470, 420), b.spawn(1130, 420), b.spawn(300, 300), b.spawn(1300, 300);
+  b.comet({640, 470}, 360, 520, 90, 850);
 }
 
 void quarry(Rules& r) {  // "The Quarry": a great stone ledge over the pit
@@ -114,6 +148,37 @@ void quarry(Rules& r) {  // "The Quarry": a great stone ledge over the pit
   b.slab_px(1330, 350, 130);
   b.blast();
   b.spawn(470, 400), b.spawn(1130, 400), b.spawn(300, 270), b.spawn(1300, 270);
+  b.rockfall(200, 300, 80, 60);
+}
+
+void tide(Rules& r) {  // "Tide Pools": low stone islands, until the tide comes in
+  Builder b{r};
+  for (auto [x, y, n] : {std::array{380, 640, 5}, {980, 640, 5}, {680, 530, 5}, {220, 480, 4}, {1188, 480, 4},
+                         {500, 390, 3}, {956, 390, 3}, {704, 270, 4}}) {
+    b.row(x, y, n);
+  }
+  b.slab_px(140, 770, 200);
+  b.slab_px(700, 770, 200);
+  b.slab_px(1260, 770, 200);
+  b.blast();
+  b.spawn(470, 320), b.spawn(1130, 320), b.spawn(800, 450), b.spawn(800, 190);
+  b.tide(720, 900, 120, 150, 240, 150, 960, 735);
+  b.comet({530}, 540, 840, 90, 750);
+}
+
+void gale(Rules& r) {  // "Gale Bridge": one long bridge over nothing
+  Builder b{r};
+  for (auto [x, y, n] : {std::array{200, 640, 25}, {360, 500, 4}, {1048, 500, 4}, {640, 420, 7}, {420, 280, 4},
+                         {988, 280, 4}, {728, 170, 3}}) {
+    b.row(x, y, n);
+  }
+  b.slab_px(180, 380, 130);
+  b.slab_px(1290, 380, 130);
+  b.slab_px(740, 760, 120);
+  b.blast();
+  b.spawn(480, 560), b.spawn(1120, 560), b.spawn(300, 300), b.spawn(1300, 300);
+  b.gale(600, 780, 100, 200, 340);
+  b.comet({380}, 540, 780, 90, 800);
 }
 
 }  // namespace
@@ -134,9 +199,11 @@ std::optional<Rules> make_rules(const Setup& setup) {
     case StageId::Practice: practice(r); break;
     case StageId::Yard: yard(r); break;
     case StageId::Quarry: quarry(r); break;
+    case StageId::Tide: tide(r); break;
+    case StageId::Gale: gale(r); break;
   }
   for (int i = 0; i < setup.players; ++i) r.engine.params.push_back(detail::movement_for(setup.characters[static_cast<std::size_t>(i)]));
-  if (r.engine.stage.platforms.size() > static_cast<std::size_t>(kMaxTiles)) return std::nullopt;
+  if (r.engine.stage.platforms.size() > static_cast<std::size_t>(kMaxTiles) || r.hazards.size() > static_cast<std::size_t>(kMaxHazardSpecs)) return std::nullopt;
   return r;
 }
 

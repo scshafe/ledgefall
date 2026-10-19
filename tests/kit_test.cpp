@@ -147,6 +147,7 @@ void test_credit_window() {
 void test_stomp() {
   const Rules r = rules_for(Character::Mason, Character::Glim);
   State s = on_ground(r);
+  for (PlayerState& p : s.players) p.invuln = 0;  // a respawned player is untouchable for 2 s
   s.world.entities[0] = fp::spawn_on(r.engine, 9, Fixed::from_int(40));
   s.world.entities[1] = fp::spawn_on(r.engine, 9, Fixed::from_int(40));
   // Player 0 falls fast onto player 1's head.
