@@ -22,6 +22,25 @@ public enum Scene {
     static let background = SIMD4<Float>(0.07, 0.08, 0.12, 1)
     static let tile = SIMD4<Float>(0.62, 0.50, 0.38, 1)
     static let shakingTile = SIMD4<Float>(0.85, 0.42, 0.25, 1)
+    static let doomedTile = SIMD4<Float>(0.85, 0.20, 0.15, 1)
+    static let slab = SIMD4<Float>(0.55, 0.60, 0.68, 1)
+
+    static func mix(_ a: SIMD4<Float>, _ b: SIMD4<Float>, _ t: Float) -> SIMD4<Float> {
+        a + (b - a) * min(max(t, 0), 1)
+    }
+
+    static func color(of kind: ThingKind) -> SIMD4<Float> {
+        switch kind {
+        case .wall: return SIMD4(0.50, 0.50, 0.55, 1)
+        case .spring: return SIMD4(0.35, 0.85, 0.45, 1)
+        case .glue: return SIMD4(0.85, 0.80, 0.30, 0.9)
+        case .oil: return SIMD4(0.25, 0.20, 0.45, 0.9)
+        case .lob: return SIMD4(0.90, 0.90, 0.90, 1)
+        case .acid: return SIMD4(0.55, 0.95, 0.20, 0.9)
+        case .gust: return SIMD4(0.70, 0.85, 1.00, 0.25)
+        case .anvil: return SIMD4(0.30, 0.30, 0.33, 1)
+        }
+    }
 
     /// The quads for the match as it stands, back to front: blast-zone floor
     /// line, platforms, bodies, stock pips.
@@ -33,7 +52,11 @@ public enum Scene {
             guard let p = match.platform(i) else { continue }
             switch p.phase {
             case .solid:
-                out.append(Quad(left: p.left, bottom: p.bottom, right: p.right, top: p.top, color: tile))
+                let base = p.sturdy ? slab : tile
+                out.append(Quad(left: p.left, bottom: p.bottom, right: p.right, top: p.top,
+                                color: p.sturdy ? base * (0.55 + 0.45 * Float(p.hp) / 4) + SIMD4(0, 0, 0, 0.45) : mix(base, shakingTile, p.stress)))
+            case .doomed:
+                out.append(Quad(left: p.left, bottom: p.bottom, right: p.right, top: p.top, color: doomedTile))
             case .shaking:
                 // A jitter that depends only on the tick, so the picture is a function of the state.
                 let shake: Float = match.tick % 4 < 2 ? 0.6 : -0.6
@@ -41,6 +64,13 @@ public enum Scene {
             case .gone, .destroyed:
                 break
             }
+        }
+
+        for i in 0..<match.thingCount {
+            guard let t = match.thing(i) else { continue }
+            var color = color(of: t.kind)
+            if !t.armed { color.w *= 0.4 }  // still arming
+            out.append(Quad(left: t.left, bottom: t.bottom, right: t.right, top: t.top, color: color))
         }
 
         for seat in 0..<match.players {

@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "ledgefall/bot.hpp"
+#include "internal.hpp"
 #include "ledgefall/match.hpp"
 
 struct lf_match {
@@ -24,10 +25,12 @@ bool seat_ok(const lf_match* m, int seat) { return m != nullptr && seat >= 0 && 
 
 extern "C" {
 
-lf_match* lf_match_create(int players, int stocks) { return lf_match_create_with(players, stocks, 1, nullptr); }
+lf_match* lf_match_create(int players, int stocks) { return lf_match_create_with(players, stocks, 1, nullptr, LF_STAGE_PRACTICE); }
 
-lf_match* lf_match_create_with(int players, int stocks, uint32_t seed, const uint8_t* characters) {
+lf_match* lf_match_create_with(int players, int stocks, uint32_t seed, const uint8_t* characters, int stage) {
+  if (stage < 0 || stage >= LF_STAGE_COUNT) return nullptr;
   Setup setup;
+  setup.stage = static_cast<StageId>(stage);
   setup.players = players;
   setup.stocks = stocks;
   setup.seed = seed;
@@ -127,7 +130,52 @@ int lf_match_platform(const lf_match* m, int index, lf_platform* out) {
   out->top = (d.rect.top + s.offset.y).raw();
   out->phase = static_cast<std::uint8_t>(s.phase);
   out->timer = s.timer;
+  out->sturdy = m->rules.slab_hp[i] != 0 ? 1 : 0;
+  out->hp = m->state.slab_hp[i];
+  out->stress = s.stress.raw();
   return 1;
+}
+
+int lf_match_thing_count(const lf_match* m) {
+  if (m == nullptr) return 0;
+  int n = 0;
+  for (const fp::Placeable& p : m->state.world.placeables) n += p.active != 0 ? 1 : 0;
+  for (const Object& o : m->state.objects) n += o.kind != ObjectKind::None ? 1 : 0;
+  return n;
+}
+
+int lf_match_thing(const lf_match* m, int index, lf_thing* out) {
+  if (m == nullptr || out == nullptr || index < 0) return 0;
+  int at = 0;
+  for (std::size_t slot = 0; slot < m->state.world.placeables.size(); ++slot) {
+    const fp::Placeable& p = m->state.world.placeables[slot];
+    if (p.active == 0 || at++ != index) continue;
+    out->kind = p.kind == fp::PlaceableKind::Wall ? LF_THING_WALL
+                : p.kind == fp::PlaceableKind::Spring ? LF_THING_SPRING
+                : p.kind == fp::PlaceableKind::Sticky ? LF_THING_GLUE : LF_THING_OIL;
+    out->left = p.rect.left.raw();
+    out->right = p.rect.right.raw();
+    out->bottom = p.rect.bottom.raw();
+    out->top = p.rect.top.raw();
+    out->owner = m->state.meta[slot].owner;
+    out->armed = 1;
+    return 1;
+  }
+  for (const Object& o : m->state.objects) {
+    if (o.kind == ObjectKind::None || at++ != index) continue;
+    const fp::Rect r = detail::object_rect(o);
+    out->kind = o.kind == ObjectKind::Lob ? LF_THING_LOB
+                : o.kind == ObjectKind::Acid ? LF_THING_ACID
+                : o.kind == ObjectKind::Gust ? LF_THING_GUST : LF_THING_ANVIL;
+    out->left = r.left.raw();
+    out->right = r.right.raw();
+    out->bottom = r.bottom.raw();
+    out->top = r.top.raw();
+    out->owner = o.owner;
+    out->armed = o.arm == 0 ? 1 : 0;
+    return 1;
+  }
+  return 0;
 }
 
 void lf_match_blast(const lf_match* m, int32_t out[4]) {

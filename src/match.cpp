@@ -71,6 +71,13 @@ void overtime(const Rules& rules, State& state, const fp::Events& events) {
     }
   }
 
+  // Collapse: every sturdy slab loses a hit point every 2 s.
+  if (collapse && tick % static_cast<std::uint32_t>(2 * kTicksPerSecond) == 0) {
+    for (std::size_t i = 0; i < rules.slab_hp.size(); ++i) {
+      if (rules.slab_hp[i] != 0) detail::damage_tile(rules, state, static_cast<int>(i), 1, -1, scratch);
+    }
+  }
+
   // Collapse: a random tile still standing is doomed every half second.
   if (collapse && tick % static_cast<std::uint32_t>(kCollapseDoomTicks) == 0) {
     const std::size_t n = state.world.platforms.size();
@@ -79,6 +86,7 @@ void overtime(const Rules& rules, State& state, const fp::Events& events) {
       const std::size_t i = (start + k) % n;
       const fp::PlatformState& p = state.world.platforms[i];
       if (p.phase != fp::PlatformPhase::Solid && p.phase != fp::PlatformPhase::Shaking) continue;
+      if (rules.slab_hp[i] != 0) continue;  // slabs are worn down, not doomed
       const fp::PlatformStress& st = rules.engine.stage.platforms[i].stress;
       if (p.stress < st.doom_at) fp::add_stress(rules.engine, state.world, static_cast<int>(i), st.doom_at - p.stress, scratch);
       break;
@@ -133,10 +141,9 @@ State make_state(const Rules& rules) {
   s.rng = rules.setup.seed;
   s.world = fp::make_world(rules.engine);
   const int n = rules.setup.players;
+  for (std::size_t t = 0; t < rules.slab_hp.size(); ++t) s.slab_hp[t] = static_cast<std::int8_t>(rules.slab_hp[t]);
   for (int i = 0; i < n; ++i) {
-    // Spread along the spawn line: n = 2 gives the ends, n = 4 the four points.
-    const Fixed x = Fixed::from_int(-60 + 120 * i / (n - 1));
-    s.world.entities.push_back(spawn_at({x, rules.spawns[0].y}));
+    s.world.entities.push_back(spawn_at(rules.spawns[static_cast<std::size_t>(i)]));
     PlayerState p;
     p.stocks = static_cast<std::int8_t>(rules.setup.stocks);
     s.players.push_back(p);
@@ -200,8 +207,8 @@ void step(const Rules& rules, State& state, std::span<const Input> inputs) {
   detail::vertical_contacts(rules, state, events, vel_before, scratch);
   detail::after_step(rules, state, events, scratch);
   detail::update_objects(rules, state, scratch);
-  detail::credit_crumbles(state, events, support_before);
-  detail::credit_crumbles(state, scratch, support_before);
+  detail::credit_crumbles(rules, state, events, support_before);
+  detail::credit_crumbles(rules, state, scratch, support_before);
   overtime(rules, state, events);
 
   // Players eliminated this tick lose a stock; the others' respawn clocks run.

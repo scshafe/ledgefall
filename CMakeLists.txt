@@ -43,7 +43,7 @@ if(BUILD_TESTING)
   target_link_libraries(ledgefall_core_match_test PRIVATE ledgefall::ledgefall_core)
   add_test(NAME ledgefall_core_match COMMAND ledgefall_core_match_test)
 
-  foreach(name scenario determinism_trace bot capi kit glim pip)
+  foreach(name scenario determinism_trace bot capi kit glim pip slab)
     add_executable(ledgefall_core_${name}_test tests/${name}_test.cpp)
     target_link_libraries(ledgefall_core_${name}_test PRIVATE ledgefall::ledgefall_core)
     target_compile_definitions(ledgefall_core_${name}_test PRIVATE

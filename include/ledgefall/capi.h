@@ -64,7 +64,23 @@ typedef struct lf_platform {
   int32_t left, right, bottom, top;  /* where it is now */
   uint8_t phase;                     /* lf_platform_phase */
   int32_t timer;                     /* ticks left in Shaking or Gone */
+  uint8_t sturdy;                    /* 1 for a sturdy slab, 0 for a crumble tile */
+  int32_t hp;                        /* a slab's hit points left */
+  int32_t stress;                    /* a tile's stress, 0..LF_FIXED_ONE */
 } lf_platform;
+
+/* The things on the stage that are not stage: placeables and objects. */
+enum lf_thing_kind {
+  LF_THING_WALL, LF_THING_SPRING, LF_THING_GLUE, LF_THING_OIL, LF_THING_LOB, LF_THING_ACID, LF_THING_GUST,
+  LF_THING_ANVIL
+};
+
+typedef struct lf_thing {
+  int32_t kind;  /* lf_thing_kind */
+  int32_t left, right, bottom, top;
+  int32_t owner; /* seat */
+  int32_t armed; /* 1 once it acts (a spring or gust that is still arming is 0) */
+} lf_thing;
 
 typedef struct lf_player {
   int32_t stocks;
@@ -78,8 +94,11 @@ typedef struct lf_player {
 
 /* NULL if players is not 2..4 or stocks not 1..5. Seats get Mason, Glim, Pip and Fuse in turn. */
 lf_match* lf_match_create(int players, int stocks);
-/* The same with the match's random seed and a character (lf_character) for each of the `players` seats. */
-lf_match* lf_match_create_with(int players, int stocks, uint32_t seed, const uint8_t* characters);
+enum lf_stage { LF_STAGE_PRACTICE, LF_STAGE_YARD, LF_STAGE_QUARRY, LF_STAGE_COUNT };
+
+/* The same with the match's random seed, a character (lf_character) for each of the `players` seats
+ * (NULL for the defaults), and a stage (lf_stage). */
+lf_match* lf_match_create_with(int players, int stocks, uint32_t seed, const uint8_t* characters, int stage);
 void lf_match_destroy(lf_match* m);
 
 /* Make a seat a bot (LF_BOT_EASY..HARD) or a human again (LF_BOT_NONE). 0 on a bad seat or level. */
@@ -100,6 +119,9 @@ int lf_match_entity(const lf_match* m, int seat, lf_entity* out);
 
 int lf_match_platform_count(const lf_match* m);
 int lf_match_platform(const lf_match* m, int index, lf_platform* out);
+
+int lf_match_thing_count(const lf_match* m);
+int lf_match_thing(const lf_match* m, int index, lf_thing* out);
 
 /* The blast zone: left, right, bottom, top. */
 void lf_match_blast(const lf_match* m, int32_t out[4]);
