@@ -21,6 +21,14 @@ extern "C" {
 
 #define LF_BUTTON_JUMP 1
 #define LF_BUTTON_DOWN 2
+#define LF_BUTTON_PLACE 4 /* move slot 1 */
+#define LF_BUTTON_TRICK 8 /* move slot 2 */
+#define LF_BUTTON_BREAK 16 /* move slot 3 */
+
+enum lf_character { /* mirrors ledgefall::Character */
+  LF_CHARACTER_MASON, LF_CHARACTER_GLIM, LF_CHARACTER_PIP, LF_CHARACTER_FUSE, LF_CHARACTER_DAB,
+  LF_CHARACTER_FERN, LF_CHARACTER_FERRO, LF_CHARACTER_COUNT
+};
 
 #define LF_BOT_NONE (-1) /* a human seat */
 #define LF_BOT_EASY 0
@@ -61,10 +69,17 @@ typedef struct lf_platform {
 typedef struct lf_player {
   int32_t stocks;
   int32_t respawn_timer;  /* ticks until it comes back, 0 if none pending */
+  int32_t character;      /* lf_character */
+  int32_t cooldown[3];    /* ticks until each move can be cast again */
+  int32_t place;          /* final placing once the match is over, 1 is the winner; 0 before */
+  int32_t kos;            /* eliminations credited */
+  int32_t falls;          /* self-eliminations */
 } lf_player;
 
-/* NULL if players is not 2..4 or stocks not 1..5. */
+/* NULL if players is not 2..4 or stocks not 1..5. Seats get Mason, Glim, Pip and Fuse in turn. */
 lf_match* lf_match_create(int players, int stocks);
+/* The same with the match's random seed and a character (lf_character) for each of the `players` seats. */
+lf_match* lf_match_create_with(int players, int stocks, uint32_t seed, const uint8_t* characters);
 void lf_match_destroy(lf_match* m);
 
 /* Make a seat a bot (LF_BOT_EASY..HARD) or a human again (LF_BOT_NONE). 0 on a bad seat or level. */

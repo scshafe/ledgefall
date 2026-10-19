@@ -1,4 +1,6 @@
-#include "ledgefall/match.hpp"
+#include <algorithm>
+
+#include "internal.hpp"
 
 namespace ledgefall {
 namespace {
@@ -83,6 +85,46 @@ void overtime(const Rules& rules, State& state, const fp::Events& events) {
     }
   }
 }
+// The order players placed in: the survivors first, then the eliminated, the
+// last out first. Ties (the same tick, or survivors together) go to credited
+// eliminations, then fewer self-eliminations, then more platforms broken, then
+// the lower seat (lost-footing's tieBreak).
+void rank(State& state) {
+  const std::size_t n = state.players.size();
+  auto better = [&](int a, int b) {
+    const Stats& x = state.players[static_cast<std::size_t>(a)].stats;
+    const Stats& y = state.players[static_cast<std::size_t>(b)].stats;
+    if (x.kos != y.kos) return x.kos > y.kos;
+    if (x.falls != y.falls) return x.falls < y.falls;
+    const int bx = x.tiles_broken + x.slabs_broken, by = y.tiles_broken + y.slabs_broken;
+    if (bx != by) return bx > by;
+    return a < b;
+  };
+  std::vector<int> standing, out;
+  for (std::size_t i = 0; i < n; ++i) (state.players[i].stocks > 0 ? standing : out).push_back(static_cast<int>(i));
+  std::sort(standing.begin(), standing.end(), better);
+  std::sort(out.begin(), out.end(), [&](int a, int b) {
+    const auto ka = state.players[static_cast<std::size_t>(a)].ko_tick, kb = state.players[static_cast<std::size_t>(b)].ko_tick;
+    return ka != kb ? ka > kb : better(a, b);
+  });
+  std::int8_t place = 1;
+  for (int seat : standing) state.players[static_cast<std::size_t>(seat)].place = place++;
+  for (int seat : out) state.players[static_cast<std::size_t>(seat)].place = place++;
+  state.winner = static_cast<std::int8_t>(!standing.empty() ? standing.front() : out.front());
+}
+
+// A player leaves the stage: a stock lost, to whoever is credited or to nobody.
+void eliminate(State& state, std::size_t i) {
+  PlayerState& p = state.players[i];
+  const int by = p.blame_by >= 0 && static_cast<std::int32_t>(state.world.frame) - p.blame_tick <= kBlameWindowTicks ? p.blame_by : -1;
+  --p.stocks;
+  ++p.stats.deaths;
+  if (by >= 0) ++state.players[static_cast<std::size_t>(by)].stats.kos;
+  else ++p.stats.falls;
+  p.blame_by = -1;
+  p.ko_tick = static_cast<std::int32_t>(state.world.frame);
+  if (p.stocks > 0) p.respawn_timer = kRespawnDelayTicks;
+}
 
 }  // namespace
 
@@ -95,7 +137,9 @@ State make_state(const Rules& rules) {
     // Spread along the spawn line: n = 2 gives the ends, n = 4 the four points.
     const Fixed x = Fixed::from_int(-60 + 120 * i / (n - 1));
     s.world.entities.push_back(spawn_at({x, rules.spawns[0].y}));
-    s.players.push_back({static_cast<std::int8_t>(rules.setup.stocks), 0});
+    PlayerState p;
+    p.stocks = static_cast<std::int8_t>(rules.setup.stocks);
+    s.players.push_back(p);
   }
   return s;
 }
@@ -103,41 +147,69 @@ State make_state(const Rules& rules) {
 void step(const Rules& rules, State& state, std::span<const Input> inputs) {
   if (state.over) return;
   const std::size_t n = state.players.size();
+  fp::Events events, scratch;
+
+  // Moves: cooldowns run, a button that went down casts.
+  for (std::size_t i = 0; i < n; ++i) {
+    PlayerState& p = state.players[i];
+    const Input in = i < inputs.size() ? inputs[i] : Input{};
+    for (auto& c : p.cooldown) c = static_cast<std::int16_t>(std::max(c - 1, 0));
+    if (state.world.entities[i].eliminated == 0) {
+      for (int slot = 0; slot < kMoveSlots; ++slot) {
+        const std::uint8_t bit = static_cast<std::uint8_t>(kButtonPlace << slot);
+        if ((in.buttons & bit) == 0 || (p.prev_buttons & bit) != 0 || p.cooldown[static_cast<std::size_t>(slot)] > 0) continue;
+        if (detail::cast(rules, state, static_cast<int>(i), slot, in, scratch)) {
+          p.cooldown[static_cast<std::size_t>(slot)] = static_cast<std::int16_t>(detail::cooldown_ticks(rules.setup.characters[i], slot));
+        }
+      }
+    }
+    p.prev_buttons = in.buttons;
+  }
+  detail::arm_pending(rules, state, scratch);
 
   std::vector<fp::Intent> intents(n);
   for (std::size_t i = 0; i < n && i < inputs.size(); ++i) intents[i] = to_intent(inputs[i]);
-  fp::Events events;
-  fp::step(rules.engine, state.world, intents, events);
+  std::vector<fp::Vec2> vel_before(n);
+  for (std::size_t i = 0; i < n; ++i) vel_before[i] = state.world.entities[i].vel;
+
+  // A slowed player (stomped) moves at a share of their speeds this tick.
+  bool slowed = false;
+  for (const PlayerState& p : state.players) slowed = slowed || p.slow > 0;
+  if (slowed) {
+    fp::Config work = rules.engine;
+    for (std::size_t i = 0; i < n; ++i) {
+      if (state.players[i].slow <= 0) continue;
+      fp::MovementParams& m = work.params[i];
+      const Fixed share = detail::fx100(55);
+      m.walk_max = m.walk_max * share;
+      m.dash_max = m.dash_max * share;
+      m.run_max = m.run_max * share;
+    }
+    fp::step(work, state.world, intents, events);
+  } else {
+    fp::step(rules.engine, state.world, intents, events);
+  }
+  for (PlayerState& p : state.players) p.slow = static_cast<std::int16_t>(std::max(p.slow - 1, 0));
+
+  detail::vertical_contacts(rules, state, events, vel_before, scratch);
+  detail::after_step(rules, state, events, scratch);
   overtime(rules, state, events);
 
   // Players eliminated this tick lose a stock; the others' respawn clocks run.
-  std::vector<int> lost_last;
   for (std::size_t i = 0; i < n; ++i) {
     PlayerState& p = state.players[i];
     if (p.respawn_timer > 0) {
       if (--p.respawn_timer == 0) state.world.entities[i] = spawn_at(farthest_spawn(rules, state, static_cast<int>(i)));
     } else if (state.world.entities[i].eliminated != 0 && p.stocks > 0) {
-      if (--p.stocks > 0) {
-        p.respawn_timer = kRespawnDelayTicks;
-      } else {
-        lost_last.push_back(static_cast<int>(i));
-      }
+      eliminate(state, i);
     }
   }
 
   int standing = 0;
-  int last_seat = -1;
-  for (std::size_t i = 0; i < n; ++i) {
-    if (state.players[i].stocks > 0) {
-      ++standing;
-      last_seat = static_cast<int>(i);
-    }
-  }
+  for (const PlayerState& p : state.players) standing += p.stocks > 0 ? 1 : 0;
   if (standing <= 1) {
     state.over = true;
-    // Several players out on the same tick: the tie-break that needs credit and
-    // platform counts arrives with placeables; until then the lowest seat wins.
-    state.winner = static_cast<std::int8_t>(standing == 1 ? last_seat : (lost_last.empty() ? -1 : lost_last.front()));
+    rank(state);
   }
 }
 

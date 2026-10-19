@@ -63,8 +63,8 @@ final class AppModel: ObservableObject {
         let pads = controllers.states()
         for (id, pad) in pads {
             for action in MenuInput.actions(from: previousPads[id] ?? GamepadState(), to: pad) {
-                // While playing only "back" (pause) is a menu action; the stick and buttons are the game's.
-                if flow.phase != .playing || action == .back { handle(action) }
+                // While playing only the menu button pauses; the stick and the face buttons are the game's.
+                if flow.phase != .playing || action == .pause { handle(action) }
             }
         }
         previousPads = pads

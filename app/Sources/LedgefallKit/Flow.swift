@@ -1,6 +1,7 @@
 /// What a menu can ask for, from any device.
 public enum MenuAction: Equatable {
     case up, down, left, right, confirm, back
+    case pause  // the controller's menu button: pause, or resume
 }
 
 public enum Phase: Equatable {
@@ -45,13 +46,13 @@ public struct Flow: Equatable {
                     return .startMatch
                 }
                 selectedRow += 1
-            case .back: break
+            case .back, .pause: break
             }
         case .playing:
-            if action == .back { phase = .paused }
+            if action == .back || action == .pause { phase = .paused }
         case .paused:
             switch action {
-            case .confirm: phase = .playing
+            case .confirm, .pause: phase = .playing
             case .back:
                 phase = .setup
                 return .showDemo
@@ -105,6 +106,7 @@ public enum MenuInput {
         var out: [MenuAction] = []
         if new.south && !old.south { out.append(.confirm) }
         if new.east && !old.east { out.append(.back) }
+        if new.menu && !old.menu { out.append(.pause) }
         let (ox, oy) = direction(old), (nx, ny) = direction(new)
         if nx != ox && nx != 0 { out.append(nx < 0 ? .left : .right) }
         if ny != oy && ny != 0 { out.append(ny > 0 ? .up : .down) }

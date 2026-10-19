@@ -61,6 +61,22 @@ difference will be absorbed.
   30 s a broken tile takes 50% longer to return), collapse from 3:30 (nothing
   broken returns; a random tile, from the match's seeded generator in the
   state, is doomed every 0.5 s).
+- The kit (milestone 5, in progress): seven `Character`s with a movement table
+  each (data, `src/characters.cpp`) and three moves on the Place, Trick and
+  Break buttons; a move casts on the tick its button goes down if its cooldown
+  (lost-footing's) is spent. Moves put things into the engine (`src/moves.cpp`):
+  walls and springs are engine placeables, with a side table in the state for
+  owner, uses left and the tile they stand on; a spring first waits out its
+  arming time as a pending placement. Credit is `blame` (who last did something
+  indirect to a player, within 5 s), stats, and lost-footing's tie-break for
+  the placings (`rank`). Vertical contact (`src/contact.cpp`): a fast landing
+  on a head is a stomp (bounce, slow, tile stress), a slow one rides.
+  Done: Mason's Wall, Pip's Spring (and its air launch). Everything else in
+  `docs/lost-footing-brief.md`'s table follows one move at a time. Lost-footing
+  pixels become units at about 0.32.
+- Engine asks for the rest of the kit: one-way placeables (ledge, vine leaves,
+  decoys; fighter-physics#21) and per-entity movement modifiers (glue, thorns;
+  #22, worked around by scaling a copy of the config).
 - Known gaps against lost-footing: the respawn halo and post-respawn immunity
   wait for hazards; the engine splits a straddler's load equally between the
   tiles (lost-footing: 75% each).
