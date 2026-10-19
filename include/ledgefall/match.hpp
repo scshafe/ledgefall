@@ -124,8 +124,8 @@ constexpr int kMaxPending = 16;
 
 // Things in flight or at work that the engine has no slot for: a lob on its
 // way down, an acid puddle eating tiles, a gust blowing. Fixed-point plain data like the rest.
-enum class ObjectKind : std::uint8_t { None, Lob, Acid, Gust, Anvil };
-enum class Payload : std::uint8_t { Glue, Oil, Acid };  // what a lob carries
+enum class ObjectKind : std::uint8_t { None, Lob, Acid, Gust, Anvil, Bumper, Charge, Saw };
+enum class Payload : std::uint8_t { Glue, Oil, Acid, Charge };  // what a lob carries
 
 struct Object {
   ObjectKind kind = ObjectKind::None;
@@ -138,9 +138,12 @@ struct Object {
   std::int16_t arm = 0;     // ticks until it acts (a gust spins up first)
   std::int8_t breaks = 0;   // an anvil: tiles it has broken so far
   std::int16_t rest = 0;    // an anvil: ticks left lying on a slab, 0 while it falls
+  std::int8_t uses = 0;     // a bumper: bounces left
+  std::array<std::int16_t, 4> cool{};  // a bumper: per seat, ticks before it bounces them again
+  std::array<std::int16_t, 4> hit{};   // a saw: the slabs it has already chipped (platform + 1; 0 for none)
 };
 
-constexpr int kMaxObjects = 16;
+constexpr int kMaxObjects = 24;
 constexpr int kMaxTiles = 96;  // platforms the stage may have (side tables are this long)
 
 // Who last put stress on a tile, so a player it drops is credited to them.

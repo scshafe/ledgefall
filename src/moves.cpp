@@ -145,6 +145,11 @@ bool cast(const Rules& rules, State& state, int seat, int slot, const Input& in,
       else if (slot == 1) done = cast_gust(rules, state, seat);
       else done = cast_drill(state, seat);
       break;
+    case Character::Fuse:
+      if (slot == 0) done = cast_bumper(state, rules, seat, events);
+      else if (slot == 1) done = throw_lob(state, rules, seat, Payload::Charge, in);
+      else done = cast_saw(state, rules, seat);
+      break;
     case Character::Glim:  // glue, oil and acid, each a lob
       done = throw_lob(state, rules, seat, slot == 0 ? Payload::Glue : slot == 1 ? Payload::Oil : Payload::Acid, in);
       break;

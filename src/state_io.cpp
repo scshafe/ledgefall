@@ -12,7 +12,7 @@
 namespace ledgefall {
 namespace {
 
-constexpr std::uint8_t kMagic0 = 'L', kMagic1 = 'F', kVersion = 5;
+constexpr std::uint8_t kMagic0 = 'L', kMagic1 = 'F', kVersion = 6;
 constexpr std::size_t kHeaderBytes = 3;
 
 // An integer or an enum, as the unsigned integer of its own width.
@@ -141,6 +141,9 @@ void io_state(A& a, State& s) {
     a.num(o.arm);
     a.num(o.breaks);
     a.num(o.rest);
+    a.num(o.uses);
+    for (auto& c : o.cool) a.num(c);
+    for (auto& h : o.hit) a.num(h);
   }
   for (TileBlame& t : s.tile_blame) {
     a.num(t.by);
@@ -173,8 +176,14 @@ bool plausible(const Rules& rules, const State& s) {
     if (p.used && p.owner < 0) return false;
   }
   for (const Object& o : s.objects) {
-    if (static_cast<int>(o.kind) > static_cast<int>(ObjectKind::Anvil) || static_cast<int>(o.payload) > static_cast<int>(Payload::Acid)) return false;
-    if (o.owner < -1 || o.owner >= n || o.timer < 0 || o.arm < 0 || o.breaks < 0 || o.rest < 0) return false;
+    if (static_cast<int>(o.kind) > static_cast<int>(ObjectKind::Saw) || static_cast<int>(o.payload) > static_cast<int>(Payload::Charge)) return false;
+    if (o.owner < -1 || o.owner >= n || o.timer < 0 || o.arm < 0 || o.breaks < 0 || o.rest < 0 || o.uses < 0) return false;
+    for (auto c : o.cool) {
+      if (c < 0) return false;
+    }
+    for (auto h : o.hit) {
+      if (h < 0 || h > static_cast<int>(rules.engine.stage.platforms.size())) return false;
+    }
     if (o.kind != ObjectKind::None && o.owner < 0) return false;
   }
   for (const TileBlame& t : s.tile_blame) {

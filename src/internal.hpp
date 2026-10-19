@@ -42,6 +42,9 @@ bool in_play(fp::PlatformPhase p);
 // The box an object is drawn (and, for a gust, felt) in.
 fp::Rect object_rect(const Object& o);
 
+bool cast_bumper(State& state, const Rules& rules, int seat, fp::Events& events);
+bool cast_saw(State& state, const Rules& rules, int seat);
+
 bool cast_anvil(State& state, const Rules& rules, int seat, const Input& in);
 
 // Keep at most `max` placeables of a kind per owner: the oldest goes.

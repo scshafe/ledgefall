@@ -76,7 +76,7 @@ difference will be absorbed.
   floor), Crumble Yard, The Quarry. A sturdy slab is a platform on the stress
   model with no rates; its hit points are in the state, `damage_tile` breaks it
   at 0 (the engine sends it Gone and brings it back whole after 8 s), and the
-  collapse wears slabs down. Done: Mason's Wall and Anvil, all of Pip's kit (Spring with its air launch, Gust, Drill), all of Glim's kit.
+  collapse wears slabs down. Done: Mason's Wall and Anvil, all of Fuse's kit (bumper, charge, saw), all of Pip's kit (Spring with its air launch, Gust, Drill), all of Glim's kit.
   Lobs and acid puddles are `Object`s in the state (`src/objects.cpp`); glue and
   oil become the engine's sticky and slick patches; tiles remember who last
   stressed them (`tile_blame`), so a tile that drops someone credits its maker.
@@ -86,6 +86,8 @@ difference will be absorbed.
 - Engine asks for the rest of the kit: one-way placeables (ledge, vine leaves,
   decoys; fighter-physics#21) and per-entity movement modifiers (glue, thorns;
   #22, worked around by scaling a copy of the config).
+- Engine bug found: fighter-physics#23 (`restore` rejects a world with a doomed
+  tile); rollback cannot ship until it is fixed and the pin bumped.
 - Known gaps against lost-footing: the respawn halo and post-respawn immunity
   wait for hazards; the engine splits a straddler's load equally between the
   tiles (lost-footing: 75% each).
