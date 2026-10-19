@@ -12,7 +12,7 @@
 namespace ledgefall {
 namespace {
 
-constexpr std::uint8_t kMagic0 = 'L', kMagic1 = 'F', kVersion = 6;
+constexpr std::uint8_t kMagic0 = 'L', kMagic1 = 'F', kVersion = 7;
 constexpr std::size_t kHeaderBytes = 3;
 
 // An integer or an enum, as the unsigned integer of its own width.
@@ -116,6 +116,7 @@ void io_state(A& a, State& s) {
     a.num(m.uses);
     a.num(m.support);
     a.num(m.born);
+    a.num(m.tag);
   }
   for (Pending& p : s.pending) {
     std::uint8_t used = p.used ? 1 : 0;
@@ -126,6 +127,7 @@ void io_state(A& a, State& s) {
     io_placeable(a, p.what);
     a.num(p.support);
     a.num(p.uses);
+    a.num(p.tag);
   }
   for (Object& o : s.objects) {
     a.num(o.kind);
@@ -164,19 +166,21 @@ bool plausible(const Rules& rules, const State& s) {
   }
   if (s.winner < -1 || s.winner >= n) return false;
   for (const PlaceableMeta& m : s.meta) {
+    if (m.tag > 1) return false;
     if (m.owner < -1 || m.owner >= n || m.support < -1 ||
         m.support >= static_cast<int>(rules.engine.stage.platforms.size())) {
       return false;
     }
   }
   for (const Pending& p : s.pending) {
+    if (p.tag > 1) return false;
     if (p.owner < -1 || p.owner >= n || p.delay < 0 || p.delay > 5 * kTicksPerSecond) return false;
     if (p.support < -1 || p.support >= static_cast<int>(rules.engine.stage.platforms.size())) return false;
     if (static_cast<int>(p.what.kind) > static_cast<int>(fp::PlaceableKind::Spring) || p.what.active > 1) return false;
     if (p.used && p.owner < 0) return false;
   }
   for (const Object& o : s.objects) {
-    if (static_cast<int>(o.kind) > static_cast<int>(ObjectKind::Saw) || static_cast<int>(o.payload) > static_cast<int>(Payload::Charge)) return false;
+    if (static_cast<int>(o.kind) > static_cast<int>(ObjectKind::Rub) || static_cast<int>(o.payload) > static_cast<int>(Payload::Charge)) return false;
     if (o.owner < -1 || o.owner >= n || o.timer < 0 || o.arm < 0 || o.breaks < 0 || o.rest < 0 || o.uses < 0) return false;
     for (auto c : o.cool) {
       if (c < 0) return false;

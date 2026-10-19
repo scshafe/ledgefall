@@ -15,6 +15,7 @@ constexpr int kSpringLifeTicks = 480;   // 8 s
 constexpr int kSpringArmTicks = 15;     // a quarter second before it launches
 constexpr int kSpringMax = 2;
 constexpr int kSpringUses = 4;
+constexpr int kThornMax = 2;
 
 bool grounded(const fp::EntityState& e) { return e.mode != fp::Mode::Airborne; }
 
@@ -42,13 +43,14 @@ bool blocked(const Rules& rules, const State& state, const fp::Rect& r) {
 
 }  // namespace
 
-void limit_owned(const Rules& rules, State& state, int seat, fp::PlaceableKind kind, int max, fp::Events& events) {
+void limit_owned(const Rules& rules, State& state, int seat, fp::PlaceableKind kind, int max, fp::Events& events,
+                 std::uint8_t tag) {
   for (;;) {
     int count = 0, oldest = -1;
     for (std::size_t slot = 0; slot < state.world.placeables.size(); ++slot) {
       const fp::Placeable& p = state.world.placeables[slot];
       const PlaceableMeta& m = state.meta[slot];
-      if (p.active == 0 || p.kind != kind || m.owner != seat) continue;
+      if (p.active == 0 || p.kind != kind || m.owner != seat || m.tag != tag) continue;
       ++count;
       if (oldest < 0 || m.born < state.meta[static_cast<std::size_t>(oldest)].born) oldest = static_cast<int>(slot);
     }
@@ -67,10 +69,10 @@ std::int16_t tile_under(const Rules& rules, const fp::EntityState& e) {
 
 }  // namespace
 
-void register_placed(State& state, int slot, int seat, std::uint8_t uses, std::int16_t support) {
+void register_placed(State& state, int slot, int seat, std::uint8_t uses, std::int16_t support, std::uint8_t tag) {
   if (slot < 0) return;
   state.meta[static_cast<std::size_t>(slot)] = {static_cast<std::int8_t>(seat), uses, support,
-                                                static_cast<std::int32_t>(state.world.frame)};
+                                                static_cast<std::int32_t>(state.world.frame), tag};
 }
 
 namespace {
@@ -150,6 +152,13 @@ bool cast(const Rules& rules, State& state, int seat, int slot, const Input& in,
       else if (slot == 1) done = throw_lob(state, rules, seat, Payload::Charge, in);
       else done = cast_saw(state, rules, seat);
       break;
+    case Character::Fern:  // the vine waits on fighter-physics#21
+      if (slot == 1) done = cast_thorns(state, rules, seat);
+      else if (slot == 2) done = cast_roots(state, rules, seat);
+      break;
+    case Character::Dab:  // the decoy and hollow tile wait on fighter-physics#21
+      if (slot == 2) done = cast_rub(state, rules, seat);
+      break;
     case Character::Glim:  // glue, oil and acid, each a lob
       done = throw_lob(state, rules, seat, slot == 0 ? Payload::Glue : slot == 1 ? Payload::Oil : Payload::Acid, in);
       break;
@@ -166,8 +175,8 @@ void arm_pending(const Rules& rules, State& state, fp::Events& events) {
     p.used = false;
     // The tile it was to stand on may have gone while it armed.
     if (p.support >= 0 && gone(state.world.platforms[static_cast<std::size_t>(p.support)].phase)) continue;
-    limit_owned(rules, state, p.owner, p.what.kind, kSpringMax, events);
-    register_placed(state, fp::place(state.world, p.what), p.owner, p.uses, p.support);
+    limit_owned(rules, state, p.owner, p.what.kind, p.tag == 1 ? kThornMax : kSpringMax, events, p.tag);
+    register_placed(state, fp::place(state.world, p.what), p.owner, p.uses, p.support, p.tag);
   }
 }
 
@@ -196,6 +205,20 @@ void after_step(const Rules& rules, State& state, const fp::Events& events, fp::
       if (e.pos.x >= p.rect.left && e.pos.x <= p.rect.right && e.pos.y >= p.rect.bottom && e.pos.y <= p.rect.top) {
         blame(state, static_cast<int>(i), m.owner);
       }
+    }
+  }
+
+  // Brambles chew the tiles under them.
+  for (std::size_t slot = 0; slot < state.world.placeables.size(); ++slot) {
+    const fp::Placeable& p = state.world.placeables[slot];
+    const PlaceableMeta& m = state.meta[slot];
+    if (m.owner < 0 || p.active == 0 || m.tag != 1) continue;
+    const auto& platforms = rules.engine.stage.platforms;
+    for (std::size_t t = 0; t < platforms.size(); ++t) {
+      if (rules.slab_hp[t] != 0 || !in_play(state.world.platforms[t].phase)) continue;
+      const fp::Rect& r = platforms[t].rect;
+      if (r.top < p.rect.bottom || r.top > p.rect.top || r.right <= p.rect.left || r.left >= p.rect.right) continue;
+      stress_tile(rules, state, static_cast<int>(t), Fixed::from_raw(Fixed::kOneRaw / 130), m.owner, scratch);
     }
   }
 

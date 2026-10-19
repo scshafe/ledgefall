@@ -106,6 +106,7 @@ struct PlaceableMeta {
   std::uint8_t uses = 0;      // uses left (a spring), 0 for unlimited
   std::int16_t support = -1;  // the platform it stands on; it goes when that does
   std::int32_t born = 0;      // the tick it was placed, to find a player's oldest
+  std::uint8_t tag = 0;       // 0 an ordinary placeable, 1 a bramble (thorns): a sticky patch that chews tiles
 
   friend bool operator==(const PlaceableMeta&, const PlaceableMeta&) = default;
 };
@@ -118,13 +119,14 @@ struct Pending {
   fp::Placeable what;
   std::int16_t support = -1;
   std::uint8_t uses = 0;
+  std::uint8_t tag = 0;
 };
 
 constexpr int kMaxPending = 16;
 
 // Things in flight or at work that the engine has no slot for: a lob on its
 // way down, an acid puddle eating tiles, a gust blowing. Fixed-point plain data like the rest.
-enum class ObjectKind : std::uint8_t { None, Lob, Acid, Gust, Anvil, Bumper, Charge, Saw };
+enum class ObjectKind : std::uint8_t { None, Lob, Acid, Gust, Anvil, Bumper, Charge, Saw, Roots, Rub };
 enum class Payload : std::uint8_t { Glue, Oil, Acid, Charge };  // what a lob carries
 
 struct Object {
