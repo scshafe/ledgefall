@@ -40,7 +40,8 @@ bool blocked(const Rules& rules, const State& state, const fp::Rect& r) {
   return false;
 }
 
-// Keep at most `max` placeables of a kind per owner: the oldest goes.
+}  // namespace
+
 void limit_owned(const Rules& rules, State& state, int seat, fp::PlaceableKind kind, int max, fp::Events& events) {
   for (;;) {
     int count = 0, oldest = -1;
@@ -57,16 +58,22 @@ void limit_owned(const Rules& rules, State& state, int seat, fp::PlaceableKind k
   }
 }
 
+namespace {
+
 // The tile an entity on the ground stands on, if it stands on one.
 std::int16_t tile_under(const Rules& rules, const fp::EntityState& e) {
   return e.support >= 0 && e.support < static_cast<int>(rules.engine.stage.platforms.size()) ? e.support : -1;
 }
+
+}  // namespace
 
 void register_placed(State& state, int slot, int seat, std::uint8_t uses, std::int16_t support) {
   if (slot < 0) return;
   state.meta[static_cast<std::size_t>(slot)] = {static_cast<std::int8_t>(seat), uses, support,
                                                 static_cast<std::int32_t>(state.world.frame)};
 }
+
+namespace {
 
 // ---- Mason --------------------------------------------------------------
 
@@ -101,6 +108,7 @@ bool cast_spring(const Rules& rules, State& state, int seat, const Input& in, fp
   if (!grounded(e)) {
     e.vel.y = fx100(305);  // lost-footing: -13.5 px/tick
     e.fast_falling = 0;
+    e.jumps_used = static_cast<std::int8_t>(rules.engine.params[static_cast<std::size_t>(seat)].aerial_jumps);  // it replaces the air jump
     return true;
   }
   const int dir = in.move_x > 25 ? 1 : in.move_x < -25 ? -1 : 0;
@@ -134,6 +142,9 @@ bool cast(const Rules& rules, State& state, int seat, int slot, const Input& in,
     case Character::Pip:
       if (slot == 0) done = cast_spring(rules, state, seat, in, events);
       break;
+    case Character::Glim:  // glue, oil and acid, each a lob
+      done = throw_lob(state, rules, seat, slot == 0 ? Payload::Glue : slot == 1 ? Payload::Oil : Payload::Acid, in);
+      break;
     default:
       break;
   }
@@ -152,10 +163,21 @@ void arm_pending(const Rules& rules, State& state, fp::Events& events) {
   }
 }
 
-void after_step(const Rules& rules, State& state, const fp::Events& events, fp::Events& scratch) {
+void after_step(const Rules& rules, State& state, const fp::Events& events,
+                const std::vector<std::int16_t>& support_before, fp::Events& scratch) {
   for (const fp::Event& e : events) {
     if (e.type == fp::EventType::PlaceableRemoved) {
       state.meta[static_cast<std::size_t>(e.id)] = {};
+    } else if (e.type == fp::EventType::PlatformCrumbled) {
+      // A tile someone stressed: they are credited with it, and with whoever it drops.
+      TileBlame& tb = state.tile_blame[static_cast<std::size_t>(e.id)];
+      if (tb.by >= 0 && static_cast<std::int32_t>(state.world.frame) - tb.tick <= kBlameWindowTicks) {
+        ++state.players[static_cast<std::size_t>(tb.by)].stats.tiles_broken;
+        for (std::size_t i = 0; i < support_before.size(); ++i) {
+          if (support_before[i] == e.id) blame(state, static_cast<int>(i), tb.by);
+        }
+      }
+      tb = {};
     } else if (e.type == fp::EventType::Sprung) {
       PlaceableMeta& m = state.meta[static_cast<std::size_t>(e.other)];
       if (m.owner >= 0) blame(state, e.id, m.owner);
@@ -165,6 +187,21 @@ void after_step(const Rules& rules, State& state, const fp::Events& events, fp::
       }
     }
   }
+  // Standing in someone's glue or oil is credited to them.
+  for (std::size_t slot = 0; slot < state.world.placeables.size(); ++slot) {
+    const fp::Placeable& p = state.world.placeables[slot];
+    const PlaceableMeta& m = state.meta[slot];
+    if (m.owner < 0 || p.active == 0) continue;
+    if (p.kind != fp::PlaceableKind::Sticky && p.kind != fp::PlaceableKind::Slick) continue;
+    for (std::size_t i = 0; i < state.players.size(); ++i) {
+      const fp::EntityState& e = state.world.entities[i];
+      if (e.eliminated != 0 || e.mode == fp::Mode::Airborne || static_cast<int>(i) == m.owner) continue;
+      if (e.pos.x >= p.rect.left && e.pos.x <= p.rect.right && e.pos.y >= p.rect.bottom && e.pos.y <= p.rect.top) {
+        blame(state, static_cast<int>(i), m.owner);
+      }
+    }
+  }
+
   // What stood on a tile goes when the tile does.
   for (std::size_t slot = 0; slot < state.meta.size(); ++slot) {
     const PlaceableMeta& m = state.meta[slot];

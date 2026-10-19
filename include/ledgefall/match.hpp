@@ -115,6 +115,32 @@ struct Pending {
 
 constexpr int kMaxPending = 16;
 
+// Things in flight or at work that the engine has no slot for: a lob on its
+// way down, an acid puddle eating tiles. Fixed-point plain data like the rest.
+enum class ObjectKind : std::uint8_t { None, Lob, Acid };
+enum class Payload : std::uint8_t { Glue, Oil, Acid };  // what a lob carries
+
+struct Object {
+  ObjectKind kind = ObjectKind::None;
+  std::int8_t owner = -1;
+  Payload payload = Payload::Glue;
+  fp::Vec2 pos{};           // a lob's position; an acid puddle's x is the middle, y the surface
+  fp::Vec2 vel{};
+  fp::Fixed x0{}, x1{};     // an acid puddle's extent
+  std::int16_t timer = 0;   // ticks left (an acid puddle)
+};
+
+constexpr int kMaxObjects = 16;
+constexpr int kMaxTiles = 64;  // platforms the stage may have (side tables are this long)
+
+// Who last put stress on a tile, so a player it drops is credited to them.
+struct TileBlame {
+  std::int8_t by = -1;
+  std::int32_t tick = 0;
+
+  friend bool operator==(const TileBlame&, const TileBlame&) = default;
+};
+
 // All the simulation state. fp::World's entities are indexed by seat.
 struct State {
   fp::World world;
@@ -124,6 +150,8 @@ struct State {
   std::uint32_t rng = 1;  // mulberry32 state; all randomness in the rules comes from here
   std::array<PlaceableMeta, fp::kMaxPlaceables> meta{};  // by engine placeable slot
   std::array<Pending, kMaxPending> pending{};
+  std::array<Object, kMaxObjects> objects{};
+  std::array<TileBlame, kMaxTiles> tile_blame{};  // by stage platform
 };
 
 State make_state(const Rules& rules);
