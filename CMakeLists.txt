@@ -12,7 +12,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 include(FetchContent)
 FetchContent_Declare(fighter_physics
   GIT_REPOSITORY https://github.com/scshafe/fighter-physics.git
-  GIT_TAG 953496fb410f80933067669eff409b6ad7f5845e)
+  GIT_TAG 546316bc15c625da43131c918ecb0975ccf4f325)
 # The engine's own tests and benchmark are its CI's job, not ours.
 set(_ledgefall_build_testing ${BUILD_TESTING})
 set(BUILD_TESTING OFF)
