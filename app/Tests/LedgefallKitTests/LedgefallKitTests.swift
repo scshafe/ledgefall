@@ -95,3 +95,74 @@ final class GameLoopTests: XCTestCase {
         XCTAssertEqual(loop.match.tick, 4 + GameLoop.maxTicksPerFrame)
     }
 }
+
+final class GamepadTests: XCTestCase {
+    func testDeadZoneAndScaling() {
+        XCTAssertEqual(GamepadMapping.input(GamepadState(leftX: 0.19)).moveX, 0)
+        XCTAssertEqual(GamepadMapping.input(GamepadState(leftX: -0.2)).moveX, 0)
+        XCTAssertEqual(GamepadMapping.input(GamepadState(leftX: 1)).moveX, 100)
+        XCTAssertEqual(GamepadMapping.input(GamepadState(leftX: -1)).moveX, -100)
+        XCTAssertEqual(GamepadMapping.input(GamepadState(leftX: 0.6)).moveX, 50)
+        XCTAssertEqual(GamepadMapping.input(GamepadState(leftX: 5)).moveX, 100)  // out of range is clamped
+    }
+
+    func testDpadBeatsStickAndCancels() {
+        XCTAssertEqual(GamepadMapping.input(GamepadState(leftX: -1, dpadRight: true)).moveX, 100)
+        XCTAssertEqual(GamepadMapping.input(GamepadState(dpadLeft: true, dpadRight: true)).moveX, 0)
+    }
+
+    func testButtons() {
+        XCTAssertTrue(GamepadMapping.input(GamepadState(south: true)).jump)
+        XCTAssertTrue(GamepadMapping.input(GamepadState(north: true)).jump)
+        XCTAssertFalse(GamepadMapping.input(GamepadState(east: true, west: true)).jump)
+        XCTAssertTrue(GamepadMapping.input(GamepadState(dpadDown: true)).down)
+        XCTAssertTrue(GamepadMapping.input(GamepadState(leftY: -0.7)).down)
+        XCTAssertFalse(GamepadMapping.input(GamepadState(leftY: -0.5)).down)
+    }
+}
+
+final class SeatingTests: XCTestCase {
+    func testDevicesJoinOnUseInOrder() {
+        var seating = Seating()
+        var update = seating.update(DeviceFrame())
+        XCTAssertEqual(update.joined, [])
+        XCTAssertEqual(update.inputs, Array(repeating: PlayerInput(), count: 4))
+
+        update = seating.update(DeviceFrame(keys: [124]))  // an arrow key
+        XCTAssertEqual(update.joined, [0])
+        XCTAssertEqual(seating.seat(of: .keyboard(cluster: 1)), 0)
+        XCTAssertEqual(update.inputs[0], PlayerInput(moveX: 100))
+
+        update = seating.update(DeviceFrame(keys: [124], pads: [7: GamepadState(south: true)]))
+        XCTAssertEqual(update.joined, [1])
+        XCTAssertEqual(update.inputs[1], PlayerInput(jump: true))
+
+        update = seating.update(DeviceFrame(keys: [124], pads: [7: GamepadState()]))  // seated: stays, even idle
+        XCTAssertEqual(update.joined, [])
+        XCTAssertEqual(seating.seat(of: .controller(id: 7)), 1)
+    }
+
+    func testControllerUnplugFreesTheSeat() {
+        var seating = Seating()
+        _ = seating.update(DeviceFrame(pads: [3: GamepadState(south: true)]))
+        XCTAssertEqual(seating.seat(of: .controller(id: 3)), 0)
+        let update = seating.update(DeviceFrame())
+        XCTAssertEqual(update.left, [0])
+        XCTAssertNil(seating.seat(of: .controller(id: 3)))
+        // The freed seat is the next to be taken.
+        XCTAssertEqual(seating.update(DeviceFrame(keys: [0])).joined, [0])
+    }
+
+    func testFullSeatsTurnDevicesAway() {
+        var seating = Seating()
+        let pads = Dictionary(uniqueKeysWithValues: (0..<5).map { ($0, GamepadState(south: true)) })
+        let update = seating.update(DeviceFrame(pads: pads))
+        XCTAssertEqual(update.joined, [0, 1, 2, 3])
+        XCTAssertNil(seating.seat(of: .controller(id: 4)))
+    }
+
+    func testIdleKeysOutsideAClusterDoNotJoin() {
+        var seating = Seating()
+        XCTAssertEqual(seating.update(DeviceFrame(keys: [49, 36])).joined, [])  // space, return
+    }
+}
