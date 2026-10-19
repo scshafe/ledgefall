@@ -15,6 +15,17 @@ public struct KeyLayout: Equatable {
     /// WASD: A 0, S 1, D 2, W 13.
     public static let wasd = KeyLayout(left: 0, right: 2, jump: 13, down: 1)
 
+    /// IJKL: J 38, L 37, I 34, K 40.
+    public static let ijkl = KeyLayout(left: 38, right: 37, jump: 34, down: 40)
+
+    /// The clusters a keyboard offers, one seat each (lost-footing's P1, P2 and P3 clusters).
+    public static let clusters: [KeyLayout] = [.wasd, .arrows, .ijkl]
+
+    /// Whether any of this cluster's keys is held.
+    public func isActive(held: Set<UInt16>) -> Bool {
+        held.contains(left) || held.contains(right) || held.contains(jump) || held.contains(down)
+    }
+
     /// The input for a set of held keys. Both directions held cancel out.
     public func input(held: Set<UInt16>) -> PlayerInput {
         var axis: Int8 = 0

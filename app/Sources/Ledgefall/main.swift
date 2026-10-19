@@ -20,11 +20,16 @@ final class GameView: MTKView {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow?
     private var renderer: Renderer?
+    private var controllers: Controllers?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Seat 0 is the person on the arrow keys; the other seats are bots.
+        // Every seat starts as a bot. A person joins by using a device (a keyboard
+        // cluster: WASD, arrows or IJKL; or any button on a controller) and takes
+        // the lowest free seat from the bots; an unplugged controller gives it back.
         guard let match = Match(players: 4, stocks: 3) else { fatalError("could not create a match") }
-        for seat in 1..<4 { match.setBot(seat: seat, level: .normal) }
+        for seat in 0..<4 { match.setBot(seat: seat, level: .normal) }
+        var seating = Seating()
+        let controllers = Controllers()
         let loop = GameLoop(match: match)
 
         let rect = NSRect(x: 0, y: 0, width: 1280, height: 720)
@@ -32,10 +37,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         view.preferredFramesPerSecond = 60
         view.colorPixelFormat = .bgra8Unorm
         guard let renderer = Renderer(view: view, loop: loop, inputs: { [unowned view] in
-            [KeyLayout.arrows.input(held: view.held)]
+            let update = seating.update(DeviceFrame(keys: view.held, pads: controllers.states()))
+            for seat in update.joined { match.setBot(seat: seat, level: nil) }
+            for seat in update.left { match.setBot(seat: seat, level: .normal) }
+            return update.inputs
         }) else { fatalError("Metal is not available") }
         view.delegate = renderer
         self.renderer = renderer
+        self.controllers = controllers
 
         let window = NSWindow(contentRect: rect, styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered, defer: false)
