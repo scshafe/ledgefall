@@ -71,7 +71,12 @@ difference will be absorbed.
   indirect to a player, within 5 s), stats, and lost-footing's tie-break for
   the placings (`rank`). Vertical contact (`src/contact.cpp`): a fast landing
   on a head is a stomp (bounce, slow, tile stress), a slow one rides.
-  Done: Mason's Wall, all of Pip's kit (Spring with its air launch, Gust, Drill), all of Glim's kit.
+  Stages are data (`src/stage.cpp`): lost-footing's layouts (0.32 units a pixel
+  across, 0.26 up so one jump still reaches the next tier): Practice (a test
+  floor), Crumble Yard, The Quarry. A sturdy slab is a platform on the stress
+  model with no rates; its hit points are in the state, `damage_tile` breaks it
+  at 0 (the engine sends it Gone and brings it back whole after 8 s), and the
+  collapse wears slabs down. Done: Mason's Wall and Anvil, all of Pip's kit (Spring with its air launch, Gust, Drill), all of Glim's kit.
   Lobs and acid puddles are `Object`s in the state (`src/objects.cpp`); glue and
   oil become the engine's sticky and slick patches; tiles remember who last
   stressed them (`tile_blame`), so a tile that drops someone credits its maker.
