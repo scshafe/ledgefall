@@ -21,5 +21,12 @@ every hash.
 - A need the engine lacks is an issue in `scshafe/fighter-physics`, not a
   patch here; a small seam in the core covers the gap until it lands.
 
-Current pin: `953496fb410f80933067669eff409b6ad7f5845e` (engine milestones 1
-to 6: fixed point, movement, platforms, contacts, jobs, hash and snapshot).
+## Pins so far
+
+- `953496fb410f80933067669eff409b6ad7f5845e`: engine milestones 1 to 6 (fixed
+  point, movement, platforms, contacts, jobs, hash and snapshot).
+- `546316bc15c625da43131c918ecb0975ccf4f325`: adds crumbling by accumulated
+  stress, walls, slick and sticky patches and springs (fighter-physics #16 to
+  #20). The match played is unchanged (same winner, same tick count); every
+  hash differs because the engine's snapshot now carries stress and the
+  placeable slots, so `tests/golden/determinism_hashes.txt` was regenerated.
