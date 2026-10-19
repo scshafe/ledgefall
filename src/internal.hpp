@@ -27,11 +27,26 @@ void blame(State& state, int victim, int by);
 // happen now (then no cooldown is spent).
 bool cast(const Rules& rules, State& state, int seat, int slot, const Input& in, fp::Events& events);
 
+// Put stress on a tile on behalf of a player: the tile remembers who, so
+// whoever it drops is credited to them.
+void stress_tile(const Rules& rules, State& state, int tile, fp::Fixed amount, int by, fp::Events& scratch);
+
+// Keep at most `max` placeables of a kind per owner: the oldest goes.
+void limit_owned(const Rules& rules, State& state, int seat, fp::PlaceableKind kind, int max, fp::Events& events);
+
+// Register a placeable the engine has given a slot.
+void register_placed(State& state, int slot, int seat, std::uint8_t uses, std::int16_t support);
+
+// Glim's lobs. Throw one (payload carried), and per tick fly them and run puddles.
+bool throw_lob(State& state, const Rules& rules, int seat, Payload payload, const Input& in);
+void update_objects(const Rules& rules, State& state, fp::Events& scratch);
+
 // Per tick, before the engine steps: pending placements arm and appear.
 void arm_pending(const Rules& rules, State& state, fp::Events& events);
 
 // Per tick, after the engine has stepped: spring uses, expired and unsupported placeables.
-void after_step(const Rules& rules, State& state, const fp::Events& events, fp::Events& scratch);
+void after_step(const Rules& rules, State& state, const fp::Events& events,
+                const std::vector<std::int16_t>& support_before, fp::Events& scratch);
 
 // Contact between players (stomps and bumps), from the engine's events and the
 // velocities before the step.

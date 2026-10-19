@@ -62,6 +62,7 @@ std::optional<Rules> make_rules(const Setup& setup) {
                           Fixed::from_int(160)};
   for (int i = 0; i < setup.players; ++i) r.engine.params.push_back(detail::movement_for(setup.characters[static_cast<std::size_t>(i)]));
   for (int x : {-60, -20, 20, 60}) r.spawns.push_back({Fixed::from_int(x), Fixed::from_int(100)});
+  if (r.engine.stage.platforms.size() > static_cast<std::size_t>(kMaxTiles)) return std::nullopt;
   return r;
 }
 

@@ -170,7 +170,11 @@ void step(const Rules& rules, State& state, std::span<const Input> inputs) {
   std::vector<fp::Intent> intents(n);
   for (std::size_t i = 0; i < n && i < inputs.size(); ++i) intents[i] = to_intent(inputs[i]);
   std::vector<fp::Vec2> vel_before(n);
-  for (std::size_t i = 0; i < n; ++i) vel_before[i] = state.world.entities[i].vel;
+  std::vector<std::int16_t> support_before(n);
+  for (std::size_t i = 0; i < n; ++i) {
+    vel_before[i] = state.world.entities[i].vel;
+    support_before[i] = state.world.entities[i].support;
+  }
 
   // A slowed player (stomped) moves at a share of their speeds this tick.
   bool slowed = false;
@@ -192,7 +196,8 @@ void step(const Rules& rules, State& state, std::span<const Input> inputs) {
   for (PlayerState& p : state.players) p.slow = static_cast<std::int16_t>(std::max(p.slow - 1, 0));
 
   detail::vertical_contacts(rules, state, events, vel_before, scratch);
-  detail::after_step(rules, state, events, scratch);
+  detail::after_step(rules, state, events, support_before, scratch);
+  detail::update_objects(rules, state, scratch);
   overtime(rules, state, events);
 
   // Players eliminated this tick lose a stock; the others' respawn clocks run.

@@ -12,7 +12,7 @@
 namespace ledgefall {
 namespace {
 
-constexpr std::uint8_t kMagic0 = 'L', kMagic1 = 'F', kVersion = 2;
+constexpr std::uint8_t kMagic0 = 'L', kMagic1 = 'F', kVersion = 3;
 constexpr std::size_t kHeaderBytes = 3;
 
 // An integer or an enum, as the unsigned integer of its own width.
@@ -126,6 +126,22 @@ void io_state(A& a, State& s) {
     a.num(p.support);
     a.num(p.uses);
   }
+  for (Object& o : s.objects) {
+    a.num(o.kind);
+    a.num(o.owner);
+    a.num(o.payload);
+    a.fx(o.pos.x);
+    a.fx(o.pos.y);
+    a.fx(o.vel.x);
+    a.fx(o.vel.y);
+    a.fx(o.x0);
+    a.fx(o.x1);
+    a.num(o.timer);
+  }
+  for (TileBlame& t : s.tile_blame) {
+    a.num(t.by);
+    a.num(t.tick);
+  }
 }
 
 bool plausible(const Rules& rules, const State& s) {
@@ -150,6 +166,14 @@ bool plausible(const Rules& rules, const State& s) {
     if (p.support < -1 || p.support >= static_cast<int>(rules.engine.stage.platforms.size())) return false;
     if (static_cast<int>(p.what.kind) > static_cast<int>(fp::PlaceableKind::Spring) || p.what.active > 1) return false;
     if (p.used && p.owner < 0) return false;
+  }
+  for (const Object& o : s.objects) {
+    if (static_cast<int>(o.kind) > static_cast<int>(ObjectKind::Acid) || static_cast<int>(o.payload) > static_cast<int>(Payload::Acid)) return false;
+    if (o.owner < -1 || o.owner >= n || o.timer < 0) return false;
+    if (o.kind != ObjectKind::None && o.owner < 0) return false;
+  }
+  for (const TileBlame& t : s.tile_blame) {
+    if (t.by < -1 || t.by >= n) return false;
   }
   return true;
 }
