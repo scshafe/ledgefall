@@ -72,7 +72,7 @@ typedef struct lf_platform {
 /* The things on the stage that are not stage: placeables and objects. */
 enum lf_thing_kind {
   LF_THING_WALL, LF_THING_SPRING, LF_THING_GLUE, LF_THING_OIL, LF_THING_LOB, LF_THING_ACID, LF_THING_GUST,
-  LF_THING_ANVIL
+  LF_THING_ANVIL, LF_THING_BUMPER, LF_THING_CHARGE, LF_THING_SAW
 };
 
 typedef struct lf_thing {

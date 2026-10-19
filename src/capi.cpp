@@ -166,7 +166,10 @@ int lf_match_thing(const lf_match* m, int index, lf_thing* out) {
     const fp::Rect r = detail::object_rect(o);
     out->kind = o.kind == ObjectKind::Lob ? LF_THING_LOB
                 : o.kind == ObjectKind::Acid ? LF_THING_ACID
-                : o.kind == ObjectKind::Gust ? LF_THING_GUST : LF_THING_ANVIL;
+                : o.kind == ObjectKind::Gust ? LF_THING_GUST
+                : o.kind == ObjectKind::Anvil ? LF_THING_ANVIL
+                : o.kind == ObjectKind::Bumper ? LF_THING_BUMPER
+                : o.kind == ObjectKind::Charge ? LF_THING_CHARGE : LF_THING_SAW;
     out->left = r.left.raw();
     out->right = r.right.raw();
     out->bottom = r.bottom.raw();

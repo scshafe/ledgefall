@@ -29,6 +29,16 @@ const Fixed kAnvilHalfWidth = fx100(480), kAnvilHeight = fx100(830);
 const Fixed kAnvilGravity = fx100(19), kAnvilMaxFall = fx100(448);
 const Fixed kSpringBounce = fx100(416);  // a spring launches an anvil at 13 px/tick
 
+// Fuse's bumper, charge and saw (lost-footing's numbers at 0.32 units a pixel).
+const Fixed kBumperRadius = fx100(704), kBumperSpeed = fx100(368), kBumperLift = fx100(64);
+constexpr int kBumperLife = 420, kBumperArm = 30, kBumperUses = 4, kBumperMax = 2, kBumperRecheck = 15;
+const Fixed kChargeRadius = fx100(256), kChargeBlast = fx100(3680);
+constexpr int kChargeFuse = 100, kChargeMax = 1;
+const Fixed kSawRadius = fx100(448), kSawSpeed = fx100(224), kSawGlueSpeed = fx100(90), kSawOilSpeed = fx100(336);
+const Fixed kSawDoom = fx100(80);  // a tile it cuts is at least this stressed (lost-footing: 0.8)
+constexpr int kSawLife = 130;
+const Fixed kObjGravity = fx100(19), kObjMaxFall = fx100(448);
+
 constexpr int kDrillHopTicks = 10;
 const Fixed kDrillHop = fx100(180);     // 8 px/tick up
 const Fixed kDrillDive = fx100(350);    // 16 px/tick down
@@ -57,6 +67,26 @@ void each_surface(const Rules& rules, const State& state, F&& f) {
   }
 }
 
+// sqrt of a non-negative Fixed, rounded down, by integer Newton iteration.
+Fixed fx_sqrt(Fixed v) {
+  if (v <= Fixed::zero()) return Fixed::zero();
+  const std::uint64_t n = static_cast<std::uint64_t>(v.raw()) << Fixed::kFracBits;  // the result in raw units, squared
+  std::uint64_t x = n, y = (x + 1) / 2;
+  while (y < x) {
+    x = y;
+    y = (x + n / x) / 2;
+  }
+  return Fixed::from_raw(static_cast<std::int32_t>(x));
+}
+
+// Does a circle overlap a box?
+bool circle_box(Fixed cx, Fixed cy, Fixed r, const fp::Rect& b) {
+  const Fixed nx = cx < b.left ? b.left : cx > b.right ? b.right : cx;
+  const Fixed ny = cy < b.bottom ? b.bottom : cy > b.top ? b.top : cy;
+  const Fixed dx = cx - nx, dy = cy - ny;
+  return dx * dx + dy * dy < r * r;
+}
+
 Object* free_object(State& state) {
   for (Object& o : state.objects) {
     if (o.kind == ObjectKind::None) return &o;
@@ -66,6 +96,23 @@ Object* free_object(State& state) {
 
 // A lob lands on a tile: it becomes a patch, or an acid puddle.
 void land(const Rules& rules, State& state, const Object& lob, const Surface& on, fp::Events& scratch) {
+  if (lob.payload == Payload::Charge) {  // a charge sticks wherever it lands
+    for (;;) {
+      int count = 0;
+      Object* oldest = nullptr;
+      for (Object& o : state.objects) {
+        if (o.kind != ObjectKind::Charge || o.owner != lob.owner) continue;
+        ++count;
+        if (oldest == nullptr || o.timer < oldest->timer) oldest = &o;
+      }
+      if (count < kChargeMax) break;
+      *oldest = {};
+    }
+    if (Object* o = free_object(state)) {
+      *o = Object{ObjectKind::Charge, lob.owner, Payload::Charge, {lob.pos.x, on.top + kChargeRadius}, {}, {}, {}, static_cast<std::int16_t>(kChargeFuse)};
+    }
+    return;
+  }
   if (on.tile < 0) return;  // the top of a wall: wasted
   const bool acid = lob.payload == Payload::Acid;
   const Fixed width = acid ? kAcidWidth : lob.payload == Payload::Glue ? kGlueWidth : kOilWidth;
@@ -193,6 +240,217 @@ void update_anvil(const Rules& rules, State& state, Object& o, fp::Events& scrat
   if (o.pos.y < blast.bottom) o = {};
 }
 
+// A bumper bounces whoever touches it away: the direction from its centre to
+// theirs, at 11.5 px/tick, a little upward.
+void bounce_off(const Rules& rules, State& state, Object& b, int seat) {
+  fp::EntityState& e = state.world.entities[static_cast<std::size_t>(seat)];
+  const fp::MovementParams& m = rules.engine.params[static_cast<std::size_t>(seat)];
+  const Fixed half = m.body_height / Fixed::from_int(2);
+  Fixed dx = e.pos.x - b.pos.x, dy = e.pos.y + half - b.pos.y;
+  const Fixed len = fx_sqrt(dx * dx + dy * dy);
+  if (len < fx100(1)) {
+    dx = Fixed::zero();
+    dy = Fixed::one();
+  } else {
+    dx = dx / len;
+    dy = dy / len;
+  }
+  const Fixed big = m.body_height > m.body_half_width * Fixed::from_int(2) ? m.body_height : m.body_half_width * Fixed::from_int(2);
+  const Fixed push = kBumperRadius + big / Fixed::from_int(2) + fx100(30);
+  e.pos.x = b.pos.x + dx * push;
+  e.pos.y = b.pos.y + dy * push - half;
+  fp::start_fall(e);
+  e.vel.x = dx * kBumperSpeed;
+  e.vel.y = dy * kBumperSpeed + kBumperLift;
+  e.fast_falling = 0;
+  b.cool[static_cast<std::size_t>(seat)] = kBumperRecheck;
+  blame(state, seat, b.owner);
+  if (--b.uses <= 0) b = {};
+}
+
+void update_bumper(const Rules& rules, State& state, Object& b) {
+  for (auto& c : b.cool) c = static_cast<std::int16_t>(c > 0 ? c - 1 : 0);
+  if (--b.timer <= 0) {
+    b = {};
+    return;
+  }
+  if (b.arm > 0) {
+    --b.arm;
+    return;
+  }
+  for (std::size_t i = 0; i < state.players.size() && b.kind == ObjectKind::Bumper; ++i) {
+    const fp::EntityState& e = state.world.entities[i];
+    if (e.eliminated != 0 || b.cool[i] > 0) continue;
+    const fp::MovementParams& m = rules.engine.params[i];
+    const fp::Rect body{e.pos.x - m.body_half_width, e.pos.x + m.body_half_width, e.pos.y, e.pos.y + m.body_height};
+    if (circle_box(b.pos.x, b.pos.y, kBumperRadius, body)) bounce_off(rules, state, b, static_cast<int>(i));
+  }
+}
+
+// Everything within reach of the blast is broken or destroyed.
+void explode(const Rules& rules, State& state, const Object& c, fp::Events& scratch) {
+  const Fixed r = kChargeBlast;
+  each_surface(rules, state, [&](const Surface& s) {
+    if (s.tile < 0) return;
+    const fp::Rect box{s.left, s.right, s.top - fx100(400), s.top};
+    if (circle_box(c.pos.x, c.pos.y, r, box)) damage_tile(rules, state, s.tile, 2, c.owner, scratch);
+  });
+  for (std::size_t slot = 0; slot < state.world.placeables.size(); ++slot) {
+    const fp::Placeable& p = state.world.placeables[slot];
+    if (p.active == 0 || p.kind == fp::PlaceableKind::Sticky || p.kind == fp::PlaceableKind::Slick) continue;
+    if (circle_box(c.pos.x, c.pos.y, r, p.rect)) {
+      fp::remove_placeable(rules.engine, state.world, static_cast<int>(slot), scratch);
+      state.meta[slot] = {};
+    }
+  }
+  for (Object& q : state.objects) {
+    if (&q == &c || q.kind == ObjectKind::None) continue;
+    bool hit = false;
+    if (q.kind == ObjectKind::Anvil || q.kind == ObjectKind::Charge) hit = circle_box(c.pos.x, c.pos.y, r, detail::object_rect(q));
+    else if (q.kind == ObjectKind::Bumper) {
+      const Fixed dx = q.pos.x - c.pos.x, dy = q.pos.y - c.pos.y, rr = r + kBumperRadius;
+      hit = dx * dx + dy * dy < rr * rr;
+    } else if (q.kind == ObjectKind::Acid) hit = q.x1 > c.pos.x - r && q.x0 < c.pos.x + r && fp::abs(q.pos.y - c.pos.y) < r;
+    if (hit) q = {};
+  }
+}
+
+// A charge sits where it stuck; if its ground goes it falls. It beeps, then goes off.
+void update_charge(const Rules& rules, State& state, Object& c, fp::Events& scratch) {
+  const Fixed bottom = c.pos.y - kChargeRadius;
+  bool held = false;
+  each_surface(rules, state, [&](const Surface& s) {
+    if (bottom == s.top && c.pos.x >= s.left && c.pos.x <= s.right) held = true;
+  });
+  if (!held) {
+    const Fixed prev = bottom;
+    c.vel.y = c.vel.y - kObjGravity;
+    if (c.vel.y < Fixed::zero() - kObjMaxFall) c.vel.y = Fixed::zero() - kObjMaxFall;
+    Fixed ny = c.pos.y + c.vel.y;
+    each_surface(rules, state, [&](const Surface& s) {
+      if (c.pos.x < s.left || c.pos.x > s.right) return;
+      if (prev >= s.top && ny - kChargeRadius <= s.top) {
+        ny = s.top + kChargeRadius;
+        c.vel.y = Fixed::zero();
+      }
+    });
+    c.pos.y = ny;
+    if (c.pos.y < rules.engine.stage.blast.bottom) {
+      c = {};
+      return;
+    }
+  }
+  if (--c.timer <= 0) {
+    const Object boom = c;
+    c = {};
+    explode(rules, state, boom, scratch);
+  }
+}
+
+// A saw rolls along the surface it is on, cutting; it drops off edges, turns at walls
+// and bumpers, hops on springs, is slowed by glue and hurried by oil.
+void update_saw(const Rules& rules, State& state, Object& o, fp::Events& scratch) {
+  if (--o.timer <= 0) {
+    o = {};
+    return;
+  }
+  const Fixed bottom = o.pos.y - kSawRadius;
+  Fixed speed = kSawSpeed;
+  for (const fp::Placeable& p : state.world.placeables) {
+    if (p.active == 0 || (p.kind != fp::PlaceableKind::Sticky && p.kind != fp::PlaceableKind::Slick)) continue;
+    if (o.pos.x >= p.rect.left && o.pos.x <= p.rect.right && bottom >= p.rect.bottom && bottom <= p.rect.top) {
+      speed = p.kind == fp::PlaceableKind::Sticky ? kSawGlueSpeed : kSawOilSpeed;
+    }
+  }
+  // A strong gust against it turns it around now and then.
+  for (const Object& g : state.objects) {
+    if (g.kind != ObjectKind::Gust || g.arm > 0) continue;
+    const Fixed d = (o.pos.x - g.pos.x) * g.vel.x;
+    if (d >= Fixed::zero() && d <= kGustLen && fp::abs(o.pos.y - g.pos.y) < kGustHalfHeight && g.vel.x != o.vel.x && state.world.frame % 30 == 0) o.vel.x = g.vel.x;
+  }
+  const Fixed nx = o.pos.x + o.vel.x * speed;
+  // Walls and bumpers send it back.
+  for (const fp::Placeable& w : state.world.placeables) {
+    if (w.active != 0 && w.kind == fp::PlaceableKind::Wall && circle_box(nx, o.pos.y, kSawRadius, w.rect)) {
+      o.vel.x = o.pos.x < (w.rect.left + w.rect.right) / Fixed::from_int(2) ? Fixed::from_int(-1) : Fixed::one();
+      return;
+    }
+  }
+  for (const Object& b : state.objects) {
+    if (b.kind != ObjectKind::Bumper || b.arm > 0) continue;
+    const Fixed dx = nx - b.pos.x, dy = o.pos.y - b.pos.y, rr = kBumperRadius + kSawRadius;
+    if (dx * dx + dy * dy < rr * rr) {
+      o.vel.x = dx < Fixed::zero() ? Fixed::from_int(-1) : Fixed::one();
+      return;
+    }
+  }
+  o.pos.x = nx;
+  // Fall, and land on the highest surface crossed. `rest` counts the ticks it has been falling
+  // (it starts from rest each time it leaves a surface); the heading is vel.x.
+  const Fixed prev = bottom;
+  Fixed fall = Fixed::zero();
+  bool on_top = false;
+  Fixed top = Fixed::zero();
+  each_surface(rules, state, [&](const Surface& s) {
+    if (o.pos.x < s.left || o.pos.x > s.right) return;
+    if (prev == s.top) {
+      on_top = true;
+      top = s.top;
+    }
+  });
+  if (!on_top) {
+    // In the air: gravity over the ticks it has been falling.
+    ++o.rest;
+    fall = kObjGravity * Fixed::from_int(o.rest);
+    if (fall > kObjMaxFall) fall = kObjMaxFall;
+    const Fixed ny = bottom - fall;
+    Fixed land_top = Fixed::zero();
+    bool found = false;
+    each_surface(rules, state, [&](const Surface& s) {
+      if (o.pos.x < s.left || o.pos.x > s.right) return;
+      if (prev >= s.top && ny <= s.top && (!found || s.top > land_top)) {
+        land_top = s.top;
+        found = true;
+      }
+    });
+    if (found) {
+      o.pos.y = land_top + kSawRadius;
+      o.rest = 0;
+      on_top = true;
+      top = land_top;
+    } else {
+      o.pos.y = ny + kSawRadius;
+    }
+  } else {
+    o.rest = 0;
+  }
+  if (on_top) {
+    // Cut what it rolls over: a tile is doomed, a slab chipped once.
+    each_surface(rules, state, [&](const Surface& s) {
+      if (s.tile < 0 || s.top != top) return;
+      if (o.pos.x + kSawRadius / Fixed::from_int(2) < s.left || o.pos.x - kSawRadius / Fixed::from_int(2) > s.right) return;
+      const auto t = static_cast<std::size_t>(s.tile);
+      if (rules.slab_hp[t] == 0) {
+        const fp::PlatformState& ps = state.world.platforms[t];
+        if (ps.stress < kSawDoom) stress_tile(rules, state, s.tile, kSawDoom - ps.stress, o.owner, scratch);
+      } else {
+        for (auto& h : o.hit) {
+          if (h == s.tile + 1) return;
+        }
+        for (auto& h : o.hit) {
+          if (h == 0) {
+            h = static_cast<std::int16_t>(s.tile + 1);
+            break;
+          }
+        }
+        damage_tile(rules, state, s.tile, 1, o.owner, scratch);
+      }
+    });
+  }
+  const fp::Rect& blast = rules.engine.stage.blast;
+  if (o.pos.y < blast.bottom || o.pos.x < blast.left || o.pos.x > blast.right) o = {};
+}
+
 }  // namespace
 
 bool in_play(fp::PlatformPhase p) {
@@ -275,6 +533,12 @@ void update_objects(const Rules& rules, State& state, fp::Events& scratch) {
       if (o.pos.y < blast.bottom || o.pos.x < blast.left || o.pos.x > blast.right) o = {};
     } else if (o.kind == ObjectKind::Anvil) {
       update_anvil(rules, state, o, scratch);
+    } else if (o.kind == ObjectKind::Bumper) {
+      update_bumper(rules, state, o);
+    } else if (o.kind == ObjectKind::Charge) {
+      update_charge(rules, state, o, scratch);
+    } else if (o.kind == ObjectKind::Saw) {
+      update_saw(rules, state, o, scratch);
     } else if (o.kind == ObjectKind::Gust) {
       if (o.arm > 0) --o.arm;
       if (--o.timer <= 0) o = {};
@@ -426,10 +690,75 @@ fp::Rect object_rect(const Object& o) {
                                      : fp::Rect{o.pos.x - kGustLen, o.pos.x, o.pos.y - kGustHalfHeight, o.pos.y + kGustHalfHeight};
     case ObjectKind::Anvil:
       return {o.pos.x - kAnvilHalfWidth, o.pos.x + kAnvilHalfWidth, o.pos.y, o.pos.y + kAnvilHeight};
+    case ObjectKind::Bumper:
+      return {o.pos.x - kBumperRadius, o.pos.x + kBumperRadius, o.pos.y - kBumperRadius, o.pos.y + kBumperRadius};
+    case ObjectKind::Charge:
+      return {o.pos.x - kChargeRadius, o.pos.x + kChargeRadius, o.pos.y - kChargeRadius, o.pos.y + kChargeRadius};
+    case ObjectKind::Saw:
+      return {o.pos.x - kSawRadius, o.pos.x + kSawRadius, o.pos.y - kSawRadius, o.pos.y + kSawRadius};
     case ObjectKind::None:
       break;
   }
   return {};
+}
+
+}  // namespace ledgefall::detail
+
+namespace ledgefall::detail {
+
+bool cast_bumper(State& state, const Rules& rules, int seat, fp::Events& events) {
+  (void)events;
+  for (;;) {  // two at once: the oldest goes
+    int count = 0;
+    Object* oldest = nullptr;
+    for (Object& o : state.objects) {
+      if (o.kind != ObjectKind::Bumper || o.owner != seat) continue;
+      ++count;
+      if (oldest == nullptr || o.timer < oldest->timer) oldest = &o;
+    }
+    if (count < kBumperMax) break;
+    *oldest = {};
+  }
+  Object* slot = nullptr;
+  for (Object& o : state.objects) {
+    if (o.kind == ObjectKind::None) {
+      slot = &o;
+      break;
+    }
+  }
+  if (slot == nullptr) return false;
+  fp::EntityState& e = state.world.entities[static_cast<std::size_t>(seat)];
+  const fp::MovementParams& m = rules.engine.params[static_cast<std::size_t>(seat)];
+  Object b{ObjectKind::Bumper, static_cast<std::int8_t>(seat), Payload::Glue, {}, {}, {}, {}, static_cast<std::int16_t>(kBumperLife), 0, 0, 0,
+           static_cast<std::int8_t>(kBumperUses), {}, {}};
+  if (e.mode == fp::Mode::Airborne && e.vel.y < Fixed::zero()) {
+    // Falling: it appears underfoot, armed, and bounces Fuse up.
+    b.pos = {e.pos.x, e.pos.y - fx100(180)};
+    *slot = b;
+    bounce_off(rules, state, *slot, seat);
+    return true;
+  }
+  b.pos = {e.pos.x + fx100(1856 * e.facing), e.pos.y + m.body_height / Fixed::from_int(2) - fx100(190)};
+  b.arm = kBumperArm;
+  *slot = b;
+  return true;
+}
+
+bool cast_saw(State& state, const Rules& rules, int seat) {
+  Object* slot = nullptr;
+  for (Object& o : state.objects) {
+    if (o.kind == ObjectKind::None) {
+      slot = &o;
+      break;
+    }
+  }
+  if (slot == nullptr) return false;
+  const fp::EntityState& e = state.world.entities[static_cast<std::size_t>(seat)];
+  (void)rules;
+  *slot = Object{ObjectKind::Saw, static_cast<std::int8_t>(seat), Payload::Glue,
+                 {e.pos.x + fx100(130 * e.facing), e.pos.y + kSawRadius}, {Fixed::from_int(e.facing), Fixed::zero()},
+                 {}, {}, static_cast<std::int16_t>(kSawLife), 0, 0, 0, 0, {}, {}};
+  return true;
 }
 
 }  // namespace ledgefall::detail
