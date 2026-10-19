@@ -41,12 +41,25 @@ void register_placed(State& state, int slot, int seat, std::uint8_t uses, std::i
 bool throw_lob(State& state, const Rules& rules, int seat, Payload payload, const Input& in);
 void update_objects(const Rules& rules, State& state, fp::Events& scratch);
 
+bool cast_gust(const Rules& rules, State& state, int seat);
+bool cast_drill(State& state, int seat);
+
+// Pip's gust and drill, before the engine steps: the wind pushes whoever is in
+// it, a dive overrides the dive's own movement. `intents` may be changed.
+void apply_wind_and_drill(const Rules& rules, State& state, std::vector<fp::Intent>& intents);
+
+// Pip's drill lands (from the engine's Landed events), after the engine has stepped.
+void drill_landings(const Rules& rules, State& state, const fp::Events& events, fp::Events& scratch);
+
 // Per tick, before the engine steps: pending placements arm and appear.
 void arm_pending(const Rules& rules, State& state, fp::Events& events);
 
 // Per tick, after the engine has stepped: spring uses, expired and unsupported placeables.
-void after_step(const Rules& rules, State& state, const fp::Events& events,
-                const std::vector<std::int16_t>& support_before, fp::Events& scratch);
+void after_step(const Rules& rules, State& state, const fp::Events& events, fp::Events& scratch);
+
+// Tiles that crumbled (in the engine's events, or in ones our own stress caused)
+// count as broken for whoever stressed them last and credit whoever they drop.
+void credit_crumbles(State& state, const fp::Events& events, const std::vector<std::int16_t>& support_before);
 
 // Contact between players (stomps and bumps), from the engine's events and the
 // velocities before the step.

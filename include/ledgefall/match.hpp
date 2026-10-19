@@ -83,6 +83,7 @@ struct PlayerState {
   std::array<std::int16_t, kMoveSlots> cooldown{};  // ticks until each move can be cast again
   std::uint8_t prev_buttons = 0;     // a move casts on the tick its button goes down
   std::int16_t slow = 0;             // ticks left of a slowdown (a stomp)
+  std::int8_t drill = 0;             // Pip's drill: >0 hopping, -1 diving, 0 not
   std::int8_t blame_by = -1;         // who last did something indirect to this player, -1 for nobody
   std::int32_t blame_tick = 0;
   std::int32_t ko_tick = -1;         // when this player last lost a stock
@@ -116,8 +117,8 @@ struct Pending {
 constexpr int kMaxPending = 16;
 
 // Things in flight or at work that the engine has no slot for: a lob on its
-// way down, an acid puddle eating tiles. Fixed-point plain data like the rest.
-enum class ObjectKind : std::uint8_t { None, Lob, Acid };
+// way down, an acid puddle eating tiles, a gust blowing. Fixed-point plain data like the rest.
+enum class ObjectKind : std::uint8_t { None, Lob, Acid, Gust };
 enum class Payload : std::uint8_t { Glue, Oil, Acid };  // what a lob carries
 
 struct Object {
@@ -127,7 +128,8 @@ struct Object {
   fp::Vec2 pos{};           // a lob's position; an acid puddle's x is the middle, y the surface
   fp::Vec2 vel{};
   fp::Fixed x0{}, x1{};     // an acid puddle's extent
-  std::int16_t timer = 0;   // ticks left (an acid puddle)
+  std::int16_t timer = 0;   // ticks left (an acid puddle, a gust)
+  std::int16_t arm = 0;     // ticks until it acts (a gust spins up first)
 };
 
 constexpr int kMaxObjects = 16;
