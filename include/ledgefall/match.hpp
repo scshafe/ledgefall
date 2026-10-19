@@ -126,7 +126,7 @@ constexpr int kMaxPending = 16;
 
 // Things in flight or at work that the engine has no slot for: a lob on its
 // way down, an acid puddle eating tiles, a gust blowing. Fixed-point plain data like the rest.
-enum class ObjectKind : std::uint8_t { None, Lob, Acid, Gust, Anvil, Bumper, Charge, Saw, Roots, Rub };
+enum class ObjectKind : std::uint8_t { None, Lob, Acid, Gust, Anvil, Bumper, Charge, Saw, Roots, Rub, Magnet };
 enum class Payload : std::uint8_t { Glue, Oil, Acid, Charge };  // what a lob carries
 
 struct Object {
