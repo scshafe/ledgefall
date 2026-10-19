@@ -45,13 +45,21 @@ fp::Rect object_rect(const Object& o);
 bool cast_bumper(State& state, const Rules& rules, int seat, fp::Events& events);
 bool cast_saw(State& state, const Rules& rules, int seat);
 
+bool cast_thorns(State& state, const Rules& rules, int seat);
+bool cast_roots(State& state, const Rules& rules, int seat);
+bool cast_rub(State& state, const Rules& rules, int seat);
+
+// A tile the entity stands on (a stage platform), or -1.
+int tile_under_feet(const Rules& rules, const fp::EntityState& e);
+
 bool cast_anvil(State& state, const Rules& rules, int seat, const Input& in);
 
 // Keep at most `max` placeables of a kind per owner: the oldest goes.
-void limit_owned(const Rules& rules, State& state, int seat, fp::PlaceableKind kind, int max, fp::Events& events);
+void limit_owned(const Rules& rules, State& state, int seat, fp::PlaceableKind kind, int max, fp::Events& events,
+                 std::uint8_t tag = 0);
 
 // Register a placeable the engine has given a slot.
-void register_placed(State& state, int slot, int seat, std::uint8_t uses, std::int16_t support);
+void register_placed(State& state, int slot, int seat, std::uint8_t uses, std::int16_t support, std::uint8_t tag = 0);
 
 // Glim's lobs. Throw one (payload carried), and per tick fly them and run puddles.
 bool throw_lob(State& state, const Rules& rules, int seat, Payload payload, const Input& in);

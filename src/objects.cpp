@@ -39,6 +39,15 @@ const Fixed kSawDoom = fx100(80);  // a tile it cuts is at least this stressed (
 constexpr int kSawLife = 130;
 const Fixed kObjGravity = fx100(19), kObjMaxFall = fx100(448);
 
+// Fern's thorns and roots, Dab's rub out.
+constexpr int kThornGrow = 24, kThornLife = 300;
+const Fixed kThornNear = fx100(960), kThornWidth = fx100(4800);
+const Fixed kThornSpeed = fx100(40);  // speed x0.4
+constexpr int kRootsFuse = 60, kRootsEvery = 8;
+const Fixed kRootsAhead = fx100(3520), kRootsReach = fx100(4000);
+const Fixed kRubNear = fx100(256), kRubReach = fx100(5440);
+constexpr int kRubDelay = 30;
+
 constexpr int kDrillHopTicks = 10;
 const Fixed kDrillHop = fx100(180);     // 8 px/tick up
 const Fixed kDrillDive = fx100(350);    // 16 px/tick down
@@ -94,6 +103,20 @@ Object* free_object(State& state) {
   return nullptr;
 }
 
+// Clip [x0, x1] to the tiles of the row at `top` that it touches; false if it touches none.
+bool clip_to_row(const Rules& rules, const State& state, Fixed top, Fixed& x0, Fixed& x1) {
+  Fixed lo = Fixed::from_int(1 << 14), hi = Fixed::from_int(-(1 << 14));
+  each_surface(rules, state, [&](const Surface& s) {
+    if (s.tile < 0 || s.top != top || s.right <= x0 || s.left >= x1) return;
+    if (s.left < lo) lo = s.left;
+    if (s.right > hi) hi = s.right;
+  });
+  if (lo > hi) return false;
+  if (x0 < lo) x0 = lo;
+  if (x1 > hi) x1 = hi;
+  return true;
+}
+
 // A lob lands on a tile: it becomes a patch, or an acid puddle.
 void land(const Rules& rules, State& state, const Object& lob, const Surface& on, fp::Events& scratch) {
   if (lob.payload == Payload::Charge) {  // a charge sticks wherever it lands
@@ -119,14 +142,7 @@ void land(const Rules& rules, State& state, const Object& lob, const Surface& on
   Fixed x0 = lob.pos.x - width / Fixed::from_int(2), x1 = lob.pos.x + width / Fixed::from_int(2);
 
   // Clip it to the tiles in the same row it touches.
-  Fixed lo = Fixed::from_int(1 << 14), hi = Fixed::from_int(-(1 << 14));
-  each_surface(rules, state, [&](const Surface& s) {
-    if (s.tile < 0 || s.top != on.top || s.right <= x0 || s.left >= x1) return;
-    if (s.left < lo) lo = s.left;
-    if (s.right > hi) hi = s.right;
-  });
-  if (x0 < lo) x0 = lo;
-  if (x1 > hi) x1 = hi;
+  if (!clip_to_row(rules, state, on.top, x0, x1)) return;
 
   if (acid) {
     for (;;) {  // one puddle at a time per owner
@@ -285,6 +301,45 @@ void update_bumper(const Rules& rules, State& state, Object& b) {
     const fp::Rect body{e.pos.x - m.body_half_width, e.pos.x + m.body_half_width, e.pos.y, e.pos.y + m.body_height};
     if (circle_box(b.pos.x, b.pos.y, kBumperRadius, body)) bounce_off(rules, state, b, static_cast<int>(i));
   }
+}
+
+// Roots: the tiles around the seed shake while it swells, then are doomed; slabs in reach take 1.
+void roots_shake(const Rules& rules, State& state, const Object& o, bool burst, fp::Events& scratch) {
+  each_surface(rules, state, [&](const Surface& s) {
+    if (s.tile < 0) return;
+    const fp::Rect box{s.left, s.right, s.top - fx100(400), s.top};
+    if (!circle_box(o.pos.x, o.pos.y - fx100(190), kRootsReach, box)) return;
+    const auto t = static_cast<std::size_t>(s.tile);
+    if (rules.slab_hp[t] == 0) {
+      const fp::PlatformStress& st = rules.engine.stage.platforms[t].stress;
+      const Fixed to = (burst ? st.doom_at : st.shake_at) + fx100(3);
+      const Fixed now = state.world.platforms[t].stress;
+      if (now < to) stress_tile(rules, state, s.tile, to - now, o.owner, scratch);
+    } else if (burst) {
+      damage_tile(rules, state, s.tile, 1, o.owner, scratch);
+    }
+  });
+}
+
+void update_roots(const Rules& rules, State& state, Object& o, fp::Events& scratch) {
+  if (--o.timer > 0) {
+    if (o.timer % kRootsEvery == 0) roots_shake(rules, state, o, false, scratch);
+    return;
+  }
+  const Object seed = o;
+  o = {};
+  roots_shake(rules, state, seed, true, scratch);
+}
+
+// Dab's brushstroke lands: every platform in its span, at its height, is erased.
+void update_rub(const Rules& rules, State& state, Object& o, fp::Events& scratch) {
+  if (--o.timer > 0) return;
+  const Object stroke = o;
+  o = {};
+  each_surface(rules, state, [&](const Surface& s) {
+    if (s.tile < 0 || s.top != stroke.pos.y || s.left >= stroke.x1 || s.right <= stroke.x0) return;
+    damage_tile(rules, state, s.tile, 2, stroke.owner, scratch);
+  });
 }
 
 // Everything within reach of the blast is broken or destroyed.
@@ -533,6 +588,10 @@ void update_objects(const Rules& rules, State& state, fp::Events& scratch) {
       if (o.pos.y < blast.bottom || o.pos.x < blast.left || o.pos.x > blast.right) o = {};
     } else if (o.kind == ObjectKind::Anvil) {
       update_anvil(rules, state, o, scratch);
+    } else if (o.kind == ObjectKind::Roots) {
+      update_roots(rules, state, o, scratch);
+    } else if (o.kind == ObjectKind::Rub) {
+      update_rub(rules, state, o, scratch);
     } else if (o.kind == ObjectKind::Bumper) {
       update_bumper(rules, state, o);
     } else if (o.kind == ObjectKind::Charge) {
@@ -696,6 +755,10 @@ fp::Rect object_rect(const Object& o) {
       return {o.pos.x - kChargeRadius, o.pos.x + kChargeRadius, o.pos.y - kChargeRadius, o.pos.y + kChargeRadius};
     case ObjectKind::Saw:
       return {o.pos.x - kSawRadius, o.pos.x + kSawRadius, o.pos.y - kSawRadius, o.pos.y + kSawRadius};
+    case ObjectKind::Roots:
+      return {o.pos.x - fx100(300), o.pos.x + fx100(300), o.pos.y, o.pos.y + fx100(500)};
+    case ObjectKind::Rub:
+      return {o.x0, o.x1, o.pos.y, o.pos.y + fx100(150)};
     case ObjectKind::None:
       break;
   }
@@ -758,6 +821,93 @@ bool cast_saw(State& state, const Rules& rules, int seat) {
   *slot = Object{ObjectKind::Saw, static_cast<std::int8_t>(seat), Payload::Glue,
                  {e.pos.x + fx100(130 * e.facing), e.pos.y + kSawRadius}, {Fixed::from_int(e.facing), Fixed::zero()},
                  {}, {}, static_cast<std::int16_t>(kSawLife), 0, 0, 0, 0, {}, {}};
+  return true;
+}
+
+}  // namespace ledgefall::detail
+
+namespace ledgefall::detail {
+
+int tile_under_feet(const Rules& rules, const fp::EntityState& e) {
+  return e.mode != fp::Mode::Airborne && e.support >= 0 && e.support < static_cast<int>(rules.engine.stage.platforms.size()) ? e.support : -1;
+}
+
+namespace {
+Object* free_slot(State& state) {
+  for (Object& o : state.objects) {
+    if (o.kind == ObjectKind::None) return &o;
+  }
+  return nullptr;
+}
+}  // namespace
+
+// Thorns: a bramble patch ahead, growing for 0.4 s, then 5 s. A sticky patch (speed x0.4) that
+// chews the tiles under it (see after_step).
+bool cast_thorns(State& state, const Rules& rules, int seat) {
+  const fp::EntityState& e = state.world.entities[static_cast<std::size_t>(seat)];
+  const int tile = tile_under_feet(rules, e);
+  if (tile < 0) return false;
+  const Fixed top = rules.engine.stage.platforms[static_cast<std::size_t>(tile)].rect.top;
+  Fixed x0, x1;
+  if (e.facing > 0) {
+    x0 = e.pos.x + kThornNear;
+    x1 = x0 + kThornWidth;
+  } else {
+    x1 = e.pos.x - kThornNear;
+    x0 = x1 - kThornWidth;
+  }
+  if (!clip_to_row(rules, state, top, x0, x1)) return false;
+  for (Pending& p : state.pending) {
+    if (p.used) continue;
+    fp::Placeable patch;
+    patch.kind = fp::PlaceableKind::Sticky;
+    patch.rect = {x0, x1, top - Fixed::one(), top + Fixed::one()};
+    patch.life = kThornLife;
+    patch.traction_scale = Fixed::from_int(2);
+    patch.speed_scale = kThornSpeed;
+    p = {true, static_cast<std::int8_t>(seat), kThornGrow, patch, static_cast<std::int16_t>(tile), 0, 1};
+    return true;
+  }
+  return false;
+}
+
+bool cast_roots(State& state, const Rules& rules, int seat) {
+  const fp::EntityState& e = state.world.entities[static_cast<std::size_t>(seat)];
+  const int tile = tile_under_feet(rules, e);
+  if (tile < 0) return false;
+  for (Object& o : state.objects) {  // one at once
+    if (o.kind == ObjectKind::Roots && o.owner == seat) o = {};
+  }
+  Object* o = free_slot(state);
+  if (o == nullptr) return false;
+  *o = Object{ObjectKind::Roots, static_cast<std::int8_t>(seat), Payload::Glue,
+              {e.pos.x + kRootsAhead * Fixed::from_int(e.facing), rules.engine.stage.platforms[static_cast<std::size_t>(tile)].rect.top}, {}, {}, {},
+              static_cast<std::int16_t>(kRootsFuse)};
+  return true;
+}
+
+bool cast_rub(State& state, const Rules& rules, int seat) {
+  const fp::EntityState& e = state.world.entities[static_cast<std::size_t>(seat)];
+  const int tile = tile_under_feet(rules, e);
+  if (tile < 0) return false;
+  const fp::Rect& own = rules.engine.stage.platforms[static_cast<std::size_t>(tile)].rect;
+  // The stroke starts past the tile Dab stands on: it never erases her own footing.
+  Fixed x0;
+  if (e.facing > 0) {
+    x0 = e.pos.x + kRubNear;
+    if (own.right > x0) x0 = own.right;
+  } else {
+    Fixed edge = e.pos.x - kRubNear;
+    if (own.left < edge) edge = own.left;
+    x0 = edge - kRubReach;
+  }
+  for (Object& o : state.objects) {
+    if (o.kind == ObjectKind::Rub && o.owner == seat) o = {};
+  }
+  Object* o = free_slot(state);
+  if (o == nullptr) return false;
+  *o = Object{ObjectKind::Rub, static_cast<std::int8_t>(seat), Payload::Glue, {x0, own.top}, {}, x0, x0 + kRubReach,
+              static_cast<std::int16_t>(kRubDelay)};
   return true;
 }
 

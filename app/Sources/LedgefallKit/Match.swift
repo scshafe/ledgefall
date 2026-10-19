@@ -48,7 +48,7 @@ public struct PlatformView {
 }
 
 public enum ThingKind: Int {
-    case wall = 0, spring, glue, oil, lob, acid, gust, anvil, bumper, charge, saw
+    case wall = 0, spring, glue, oil, lob, acid, gust, anvil, bumper, charge, saw, thorns, roots, rub
 }
 
 /// A placeable or an object on the stage, as the box it is drawn in.

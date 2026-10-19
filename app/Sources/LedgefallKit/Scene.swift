@@ -42,6 +42,9 @@ public enum Scene {
         case .bumper: return SIMD4(0.95, 0.45, 0.15, 1)
         case .charge: return SIMD4(0.95, 0.15, 0.15, 1)
         case .saw: return SIMD4(0.80, 0.82, 0.86, 1)
+        case .thorns: return SIMD4(0.35, 0.55, 0.20, 0.9)
+        case .roots: return SIMD4(0.45, 0.30, 0.15, 0.8)
+        case .rub: return SIMD4(0.95, 0.95, 0.95, 0.35)
         }
     }
 
