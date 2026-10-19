@@ -41,7 +41,8 @@ final class Controllers {
             guard let pad = controller.extendedGamepad else { continue }
             out[id] = GamepadState(
                 leftX: pad.leftThumbstick.xAxis.value, leftY: pad.leftThumbstick.yAxis.value,
-                dpadLeft: pad.dpad.left.isPressed, dpadRight: pad.dpad.right.isPressed, dpadDown: pad.dpad.down.isPressed,
+                dpadLeft: pad.dpad.left.isPressed, dpadRight: pad.dpad.right.isPressed,
+                dpadUp: pad.dpad.up.isPressed, dpadDown: pad.dpad.down.isPressed,
                 south: pad.buttonA.isPressed, east: pad.buttonB.isPressed, west: pad.buttonX.isPressed,
                 north: pad.buttonY.isPressed)
         }

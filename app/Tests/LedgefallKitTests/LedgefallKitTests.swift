@@ -166,3 +166,93 @@ final class SeatingTests: XCTestCase {
         XCTAssertEqual(seating.update(DeviceFrame(keys: [49, 36])).joined, [])  // space, return
     }
 }
+
+final class FlowTests: XCTestCase {
+    func testSetupDefaultsAndLimits() {
+        var flow = Flow()
+        XCTAssertEqual(flow.phase, .setup)
+        XCTAssertEqual(flow.stocks, 3)
+        XCTAssertEqual(flow.players, 2)
+        flow.handle(.up); flow.handle(.up); flow.handle(.up)  // row 0, clamped
+        for _ in 0..<5 { flow.handle(.right) }
+        XCTAssertEqual(flow.players, 4)
+        for _ in 0..<5 { flow.handle(.left) }
+        XCTAssertEqual(flow.players, 2)
+        flow.handle(.down)
+        for _ in 0..<9 { flow.handle(.right) }
+        XCTAssertEqual(flow.stocks, 5)
+        for _ in 0..<9 { flow.handle(.left) }
+        XCTAssertEqual(flow.stocks, 1)
+    }
+
+    func testConfirmWalksDownToStart() {
+        var flow = Flow()
+        flow.handle(.up); flow.handle(.up)
+        XCTAssertNil(flow.handle(.confirm))  // players row -> stocks row
+        XCTAssertNil(flow.handle(.confirm))  // stocks row -> start
+        XCTAssertEqual(flow.handle(.confirm), .startMatch)
+        XCTAssertEqual(flow.phase, .playing)
+    }
+
+    func testPauseResumeAndQuit() {
+        var flow = Flow()
+        XCTAssertEqual(flow.handle(.confirm), .startMatch)  // starts on the Start row
+        XCTAssertNil(flow.handle(.left))                    // only back matters while playing
+        XCTAssertEqual(flow.phase, .playing)
+        flow.handle(.back)
+        XCTAssertEqual(flow.phase, .paused)
+        flow.handle(.confirm)
+        XCTAssertEqual(flow.phase, .playing)
+        flow.handle(.back)
+        XCTAssertEqual(flow.handle(.back), .showDemo)
+        XCTAssertEqual(flow.phase, .setup)
+    }
+
+    func testResultsRematchOrSetup() {
+        var flow = Flow()
+        flow.matchOver(winner: 1)  // not playing: ignored
+        XCTAssertEqual(flow.phase, .setup)
+        flow.handle(.confirm)
+        flow.matchOver(winner: 1)
+        XCTAssertEqual(flow.phase, .results(winner: 1))
+        XCTAssertEqual(flow.handle(.confirm), .startMatch)
+        flow.matchOver(winner: nil)
+        XCTAssertEqual(flow.phase, .results(winner: nil))
+        XCTAssertEqual(flow.handle(.back), .showDemo)
+        XCTAssertEqual(flow.phase, .setup)
+    }
+}
+
+final class MenuInputTests: XCTestCase {
+    func testKeys() {
+        XCTAssertEqual(MenuInput.action(forKey: 36), .confirm)
+        XCTAssertEqual(MenuInput.action(forKey: 49), .confirm)
+        XCTAssertEqual(MenuInput.action(forKey: 53), .back)
+        XCTAssertEqual(MenuInput.action(forKey: 126), .up)
+        XCTAssertNil(MenuInput.action(forKey: 0))
+    }
+
+    func testControllerEdgesOnly() {
+        let idle = GamepadState()
+        XCTAssertEqual(MenuInput.actions(from: idle, to: GamepadState(south: true)), [.confirm])
+        XCTAssertEqual(MenuInput.actions(from: GamepadState(south: true), to: GamepadState(south: true)), [])
+        XCTAssertEqual(MenuInput.actions(from: idle, to: GamepadState(east: true)), [.back])
+        XCTAssertEqual(MenuInput.actions(from: idle, to: GamepadState(dpadRight: true)), [.right])
+        XCTAssertEqual(MenuInput.actions(from: idle, to: GamepadState(leftY: -0.9)), [.down])
+        XCTAssertEqual(MenuInput.actions(from: GamepadState(leftY: -0.9), to: GamepadState(leftY: -0.9)), [])
+        XCTAssertEqual(MenuInput.actions(from: GamepadState(dpadUp: true), to: idle), [])  // release does nothing
+    }
+}
+
+final class SeatingCapacityTests: XCTestCase {
+    func testLimitReleasesAndRefuses() {
+        var seating = Seating()
+        _ = seating.update(DeviceFrame(keys: [0, 124], pads: [1: GamepadState(south: true)]))
+        XCTAssertEqual(seating.devices.compactMap { $0 }.count, 3)
+        seating.limit(to: 2)
+        XCTAssertNil(seating.seat(of: .controller(id: 1)))  // was seat 2
+        let update = seating.update(DeviceFrame(keys: [0, 124], pads: [1: GamepadState(south: true)]))
+        XCTAssertEqual(update.joined, [])  // full at two seats
+        XCTAssertEqual(update.inputs.count, 4)
+    }
+}

@@ -52,16 +52,14 @@ final class Renderer: NSObject, MTKViewDelegate {
     private let queue: MTLCommandQueue
     private let pipeline: MTLRenderPipelineState
     private let device: MTLDevice
-    private let loop: GameLoop
-    private let inputs: () -> [PlayerInput]
+    private let model: AppModel
 
-    init?(view: MTKView, loop: GameLoop, inputs: @escaping () -> [PlayerInput]) {
+    init?(view: MTKView, model: AppModel) {
         guard let device = view.device ?? MTLCreateSystemDefaultDevice(),
               let queue = device.makeCommandQueue() else { return nil }
         self.device = device
         self.queue = queue
-        self.loop = loop
-        self.inputs = inputs
+        self.model = model
 
         do {
             let library = try device.makeLibrary(source: shaderSource, options: nil)
@@ -82,14 +80,14 @@ final class Renderer: NSObject, MTKViewDelegate {
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
 
     func draw(in view: MTKView) {
-        loop.advance(to: CACurrentMediaTime(), inputs: inputs)
+        model.frame(now: CACurrentMediaTime())
 
         guard let drawable = view.currentDrawable,
               let pass = view.currentRenderPassDescriptor,
               let commands = queue.makeCommandBuffer(),
               let encoder = commands.makeRenderCommandEncoder(descriptor: pass) else { return }
 
-        let match = loop.match
+        let match = model.loop.match
         let size = view.drawableSize
         let camera = Camera(blast: match.blast, viewWidth: Float(size.width), viewHeight: Float(size.height))
         var uniforms = Uniforms(scale: camera.scale, offset: camera.offset)
@@ -112,14 +110,5 @@ final class Renderer: NSObject, MTKViewDelegate {
         commands.present(drawable)
         commands.commit()
 
-        if let title = titleFor(match), view.window?.title != title { view.window?.title = title }
-    }
-
-    private func titleFor(_ match: Match) -> String? {
-        if match.isOver {
-            if let w = match.winner { return "Ledgefall: P\(w + 1) wins" }
-            return "Ledgefall: no winner"
-        }
-        return "Ledgefall"
     }
 }

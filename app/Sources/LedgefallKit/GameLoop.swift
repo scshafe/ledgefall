@@ -11,6 +11,12 @@ public final class GameLoop {
         self.match = match
     }
 
+    /// Move the clock to `now` without running any tick (while paused).
+    public func idle(to now: Double) {
+        last = now
+        accumulator = 0
+    }
+
     /// Advance to `now` (seconds, any monotonic clock). `inputs` is asked once per tick.
     public func advance(to now: Double, inputs: () -> [PlayerInput]) {
         defer { last = now }
