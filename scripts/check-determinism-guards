@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# The core's state must be a pure function of state and inputs (docs/architecture.md,
+# "Deterministic simulation"): no floating point, no math library, no wall clock,
+# no random source, no unordered containers (their iteration order would leak
+# into state). A CTest test runs this over the core's headers and sources.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+bad=$(grep -rnE '\b(float|double)\b|<cmath>|<math\.h>|std::(sin|cos|tan|atan2?|sqrt|pow|exp|log|floor|ceil|round|trunc|fma|fmod|hypot)\b|<chrono>|<ctime>|<time\.h>|std::chrono|\btime\(|clock_gettime|gettimeofday|<random>|std::random_device|\brand\(|\bsrand\(|unordered_|std::thread|<thread>' include src || true)
+if [ -n "$bad" ]; then
+  echo "non-deterministic construct in the core:" >&2
+  echo "$bad" >&2
+  exit 1
+fi
