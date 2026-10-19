@@ -19,7 +19,7 @@ set(BUILD_TESTING OFF)
 FetchContent_MakeAvailable(fighter_physics)
 set(BUILD_TESTING ${_ledgefall_build_testing})
 
-add_library(ledgefall_core src/version.cpp)
+add_library(ledgefall_core src/version.cpp src/input.cpp src/stage.cpp src/match.cpp src/state_io.cpp)
 add_library(ledgefall::ledgefall_core ALIAS ledgefall_core)
 target_link_libraries(ledgefall_core PUBLIC fp::fighter_physics)
 target_include_directories(ledgefall_core PUBLIC
@@ -38,4 +38,8 @@ if(BUILD_TESTING)
   add_executable(ledgefall_core_engine_link_test tests/engine_link_test.cpp)
   target_link_libraries(ledgefall_core_engine_link_test PRIVATE ledgefall::ledgefall_core)
   add_test(NAME ledgefall_core_engine_link COMMAND ledgefall_core_engine_link_test)
+
+  add_executable(ledgefall_core_match_test tests/match_test.cpp)
+  target_link_libraries(ledgefall_core_match_test PRIVATE ledgefall::ledgefall_core)
+  add_test(NAME ledgefall_core_match COMMAND ledgefall_core_match_test)
 endif()
