@@ -61,6 +61,8 @@ final class MatchTests: XCTestCase {
         let yard = try XCTUnwrap(Match(players: 2, arena: .yard))
         let practice = try XCTUnwrap(Match(players: 2, arena: .practice))
         XCTAssertNotEqual(yard.platformCount, practice.platformCount)
+        XCTAssertEqual(yard.weather.tidePhase, 0)
+        XCTAssertEqual(yard.weather.galePhase, 0)
     }
 
     func testSameInputsSameHash() throws {

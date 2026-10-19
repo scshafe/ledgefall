@@ -46,6 +46,9 @@ public enum Scene {
         case .roots: return SIMD4(0.45, 0.30, 0.15, 0.8)
         case .rub: return SIMD4(0.95, 0.95, 0.95, 0.35)
         case .magnet: return SIMD4(0.75, 0.25, 0.85, 1)
+        case .comet: return SIMD4(1.00, 0.60, 0.20, 1)
+        case .rock: return SIMD4(0.45, 0.40, 0.35, 1)
+        case .cometWarning, .rockWarning: return SIMD4(1.00, 0.30, 0.20, 0.25)
         }
     }
 
@@ -54,6 +57,18 @@ public enum Scene {
     public static func quads(for match: Match) -> [Quad] {
         var out: [Quad] = []
         let blast = match.blast
+
+        // The sea and the wind sit behind the stage.
+        let weather = match.weather
+        if weather.tidePhase >= 1 {
+            let top = weather.tidePhase == 1 ? blast.bottom + 2 : weather.tideLevel
+            out.append(Quad(left: blast.left, bottom: blast.bottom, right: blast.right, top: max(top, blast.bottom + 1),
+                            color: SIMD4(0.20, 0.55, 0.85, weather.tidePhase == 1 ? 0.5 : 0.35)))
+        }
+        if weather.galePhase >= 1 {
+            let alpha: Float = weather.galePhase == 2 ? 0.14 : 0.07
+            out.append(Quad(left: blast.left, bottom: blast.bottom, right: blast.right, top: blast.top, color: SIMD4(0.8, 0.9, 1.0, alpha)))
+        }
 
         for i in 0..<match.platformCount {
             guard let p = match.platform(i) else { continue }

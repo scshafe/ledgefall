@@ -73,7 +73,8 @@ typedef struct lf_platform {
 enum lf_thing_kind {
   LF_THING_WALL, LF_THING_SPRING, LF_THING_GLUE, LF_THING_OIL, LF_THING_LOB, LF_THING_ACID, LF_THING_GUST,
   LF_THING_ANVIL, LF_THING_BUMPER, LF_THING_CHARGE, LF_THING_SAW,
-  LF_THING_THORNS, LF_THING_ROOTS, LF_THING_RUB, LF_THING_MAGNET
+  LF_THING_THORNS, LF_THING_ROOTS, LF_THING_RUB, LF_THING_MAGNET,
+  LF_THING_COMET, LF_THING_ROCK, LF_THING_COMET_WARN, LF_THING_ROCK_WARN /* stage hazards; owner is the seat that steered it, -1 for none */
 };
 
 typedef struct lf_thing {
@@ -95,7 +96,7 @@ typedef struct lf_player {
 
 /* NULL if players is not 2..4 or stocks not 1..5. Seats get Mason, Glim, Pip and Fuse in turn. */
 lf_match* lf_match_create(int players, int stocks);
-enum lf_stage { LF_STAGE_PRACTICE, LF_STAGE_YARD, LF_STAGE_QUARRY, LF_STAGE_COUNT };
+enum lf_stage { LF_STAGE_PRACTICE, LF_STAGE_YARD, LF_STAGE_QUARRY, LF_STAGE_TIDE, LF_STAGE_GALE, LF_STAGE_COUNT };
 
 /* The same with the match's random seed, a character (lf_character) for each of the `players` seats
  * (NULL for the defaults), and a stage (lf_stage). */
@@ -123,6 +124,16 @@ int lf_match_platform(const lf_match* m, int index, lf_platform* out);
 
 int lf_match_thing_count(const lf_match* m);
 int lf_match_thing(const lf_match* m, int index, lf_thing* out);
+
+/* The stage's rhythm that is not a thing: the tide and the gale. */
+typedef struct lf_weather {
+  int32_t tide_phase;  /* 0 calm, 1 warning, 2 rising, 3 holding, 4 falling */
+  int32_t tide_level;  /* the water line, y */
+  int32_t gale_phase;  /* 0 none, 1 warning, 2 blowing */
+  int32_t gale_dir;    /* -1 or 1 */
+} lf_weather;
+
+void lf_match_weather(const lf_match* m, lf_weather* out);
 
 /* The blast zone: left, right, bottom, top. */
 void lf_match_blast(const lf_match* m, int32_t out[4]);

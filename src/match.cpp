@@ -43,15 +43,6 @@ fp::Intent to_intent(const Input& in) {
   return i;
 }
 
-// mulberry32: the match's random stream, in the state so rollback restores it.
-std::uint32_t next_random(State& s) {
-  s.rng += 0x6D2B79F5u;
-  std::uint32_t t = s.rng;
-  t = (t ^ (t >> 15)) * (t | 1u);
-  t ^= t + (t ^ (t >> 7)) * (t | 61u);
-  return t ^ (t >> 14);
-}
-
 // Overtime and collapse, after the engine has stepped.
 void overtime(const Rules& rules, State& state, const fp::Events& events) {
   const std::uint32_t tick = state.world.frame;
@@ -81,7 +72,7 @@ void overtime(const Rules& rules, State& state, const fp::Events& events) {
   // Collapse: a random tile still standing is doomed every half second.
   if (collapse && tick % static_cast<std::uint32_t>(kCollapseDoomTicks) == 0) {
     const std::size_t n = state.world.platforms.size();
-    const std::size_t start = next_random(state) % n;
+    const std::size_t start = detail::next_random(state) % n;
     for (std::size_t k = 0; k < n; ++k) {
       const std::size_t i = (start + k) % n;
       const fp::PlatformState& p = state.world.platforms[i];
@@ -142,10 +133,15 @@ State make_state(const Rules& rules) {
   s.world = fp::make_world(rules.engine);
   const int n = rules.setup.players;
   for (std::size_t t = 0; t < rules.slab_hp.size(); ++t) s.slab_hp[t] = static_cast<std::int8_t>(rules.slab_hp[t]);
+  for (std::size_t h = 0; h < rules.hazards.size(); ++h) s.hazards.timers[h] = static_cast<std::int16_t>(300 + 90 * h);
+  for (const HazardSpec& h : rules.hazards) {
+    if (h.type == HazardType::Tide) s.hazards.tide_level = h.low;
+  }
   for (int i = 0; i < n; ++i) {
     s.world.entities.push_back(spawn_at(rules.spawns[static_cast<std::size_t>(i)]));
     PlayerState p;
     p.stocks = static_cast<std::int8_t>(rules.setup.stocks);
+    p.invuln = kInvulnTicks;
     s.players.push_back(p);
   }
   return s;
@@ -176,6 +172,7 @@ void step(const Rules& rules, State& state, std::span<const Input> inputs) {
 
   std::vector<fp::Intent> intents(n);
   for (std::size_t i = 0; i < n && i < inputs.size(); ++i) intents[i] = to_intent(inputs[i]);
+  detail::apply_gale(rules, state);
   detail::apply_wind_and_drill(rules, state, intents);
   std::vector<fp::Vec2> vel_before(n);
   std::vector<std::int16_t> support_before(n);
@@ -201,9 +198,14 @@ void step(const Rules& rules, State& state, std::span<const Input> inputs) {
   } else {
     fp::step(rules.engine, state.world, intents, events);
   }
-  for (PlayerState& p : state.players) p.slow = static_cast<std::int16_t>(std::max(p.slow - 1, 0));
+  for (PlayerState& p : state.players) {
+    p.slow = static_cast<std::int16_t>(std::max(p.slow - 1, 0));
+    p.invuln = static_cast<std::int16_t>(std::max(p.invuln - 1, 0));
+    p.no_contact = static_cast<std::int16_t>(std::max(p.no_contact - 1, 0));
+  }
 
   detail::drill_landings(rules, state, events, scratch);
+  detail::update_hazards(rules, state, scratch);
   detail::vertical_contacts(rules, state, events, vel_before, scratch);
   detail::after_step(rules, state, events, scratch);
   detail::update_objects(rules, state, scratch);
@@ -211,11 +213,20 @@ void step(const Rules& rules, State& state, std::span<const Input> inputs) {
   detail::credit_crumbles(rules, state, scratch, support_before);
   overtime(rules, state, events);
 
+  // The tide takes whoever it covers (a respawned player is immune for a while).
+  for (std::size_t i = 0; i < n; ++i) {
+    fp::EntityState& e = state.world.entities[i];
+    if (e.eliminated == 0 && state.players[i].invuln == 0 && detail::drowned(state, e)) e.eliminated = 1;
+  }
+
   // Players eliminated this tick lose a stock; the others' respawn clocks run.
   for (std::size_t i = 0; i < n; ++i) {
     PlayerState& p = state.players[i];
     if (p.respawn_timer > 0) {
-      if (--p.respawn_timer == 0) state.world.entities[i] = spawn_at(farthest_spawn(rules, state, static_cast<int>(i)));
+      if (--p.respawn_timer == 0) {
+        state.world.entities[i] = spawn_at(farthest_spawn(rules, state, static_cast<int>(i)));
+        p.invuln = kInvulnTicks;
+      }
     } else if (state.world.entities[i].eliminated != 0 && p.stocks > 0) {
       eliminate(state, i);
     }

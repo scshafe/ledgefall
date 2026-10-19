@@ -48,7 +48,7 @@ public struct PlatformView {
 }
 
 public enum ThingKind: Int {
-    case wall = 0, spring, glue, oil, lob, acid, gust, anvil, bumper, charge, saw, thorns, roots, rub, magnet
+    case wall = 0, spring, glue, oil, lob, acid, gust, anvil, bumper, charge, saw, thorns, roots, rub, magnet, comet, rock, cometWarning, rockWarning
 }
 
 /// A placeable or an object on the stage, as the box it is drawn in.
@@ -70,9 +70,9 @@ public enum Fighter: Int, CaseIterable {
 
 /// The stages, in the core's order.
 public enum Arena: Int, CaseIterable {
-    case practice, yard, quarry
+    case practice, yard, quarry, tide, gale
 
-    public var name: String { ["Practice", "Crumble Yard", "The Quarry"][rawValue] }
+    public var name: String { ["Practice", "Crumble Yard", "The Quarry", "Tide Pools", "Gale Bridge"][rawValue] }
 }
 
 public struct PlayerView {
@@ -173,6 +173,23 @@ public final class Match {
             bottom: Float(p.bottom) / Match.fixedOne, top: Float(p.top) / Match.fixedOne,
             phase: PlatformPhase(rawValue: p.phase) ?? .destroyed, timer: Int(p.timer),
             sturdy: p.sturdy != 0, hp: Int(p.hp), stress: Float(p.stress) / Match.fixedOne)
+    }
+
+    /// The tide and the gale.
+    public struct Weather {
+        /// 0 calm, 1 warning, 2 rising, 3 holding, 4 falling
+        public var tidePhase: Int
+        public var tideLevel: Float
+        /// 0 none, 1 warning, 2 blowing
+        public var galePhase: Int
+        public var galeDir: Int
+    }
+
+    public var weather: Weather {
+        var w = lf_weather()
+        lf_match_weather(handle, &w)
+        return Weather(tidePhase: Int(w.tide_phase), tideLevel: Float(w.tide_level) / Match.fixedOne,
+                       galePhase: Int(w.gale_phase), galeDir: Int(w.gale_dir))
     }
 
     public var thingCount: Int { Int(lf_match_thing_count(handle)) }

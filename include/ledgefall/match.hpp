@@ -27,6 +27,7 @@ constexpr int kMaxStocks = 5;
 constexpr int kDefaultStocks = 3;
 constexpr int kTicksPerSecond = 60;
 constexpr int kRespawnDelayTicks = kTicksPerSecond * 3 / 2;  // 1.5 s after an elimination
+constexpr int kInvulnTicks = 2 * kTicksPerSecond;            // hazards and contact ignore a respawned player this long
 // An indirect effect on a player is credited to its maker if the player is
 // eliminated within 5 s of it (lost-footing, "Blast zones, stocks and credit").
 constexpr int kBlameWindowTicks = 5 * kTicksPerSecond;
@@ -45,8 +46,8 @@ constexpr int kCharacterCount = 7;
 constexpr int kMoveSlots = 3;
 
 // The stages (lost-footing's, "Stages and hazards"; Practice is a plain three-tier test floor).
-enum class StageId : std::uint8_t { Practice, Yard, Quarry };
-constexpr int kStageCount = 3;
+enum class StageId : std::uint8_t { Practice, Yard, Quarry, Tide, Gale };
+constexpr int kStageCount = 5;
 
 // What a match is set up with (the lobby's choices).
 struct Setup {
@@ -59,12 +60,32 @@ struct Setup {
 
 bool valid(const Setup& s) noexcept;
 
+// What a stage does to the players on a rhythm (lost-footing, "Stages and
+// hazards"): comets skim the lanes, rocks fall, the tide rises, a gale blows.
+// Every hazard is announced before it acts.
+enum class HazardType : std::uint8_t { Comet, Rockfall, Tide, Gale };
+
+struct HazardSpec {
+  HazardType type = HazardType::Comet;
+  int every_lo = 0, every_hi = 0;  // ticks between firings, drawn from the match's random stream
+  int warn = 0;                    // ticks of warning
+  std::vector<fp::Fixed> lanes;    // comet: the surface heights it skims
+  fp::Fixed speed{};               // comet: units a tick
+  fp::Fixed force{};               // gale: push a tick
+  int duration = 0;                // gale: ticks it blows
+  fp::Fixed sturdy_bias{};         // rockfall: share of rocks aimed at slabs
+  int rise = 0, hold = 0, fall = 0;  // tide: ticks of each leg
+  fp::Fixed low{}, high{};         // tide: its levels
+};
+constexpr int kMaxHazardSpecs = 3;
+
 // Setup plus the fighter-physics config built from it. Never changes in a match.
 struct Rules {
   Setup setup;
   fp::Config engine;  // the stage and each seat's movement parameters
   std::vector<fp::Vec2> spawns;  // where eliminated players come back, by index; seat i starts at spawns[i]
   std::vector<std::uint8_t> slab_hp;  // per stage platform: hit points of a sturdy slab, 0 for a crumble tile
+  std::vector<HazardSpec> hazards;
 };
 
 // Nullopt if the setup is not valid.
@@ -89,6 +110,8 @@ struct PlayerState {
   std::array<std::int16_t, kMoveSlots> cooldown{};  // ticks until each move can be cast again
   std::uint8_t prev_buttons = 0;     // a move casts on the tick its button goes down
   std::int16_t slow = 0;             // ticks left of a slowdown (a stomp)
+  std::int16_t invuln = 0;           // ticks left of the immunity after a respawn (hazards and contact ignore the player)
+  std::int16_t no_contact = 0;       // ticks without body contact (after a rock)
   std::int8_t drill = 0;             // Pip's drill: >0 hopping, -1 diving, 0 not
   std::int8_t blame_by = -1;         // who last did something indirect to this player, -1 for nobody
   std::int32_t blame_tick = 0;
@@ -148,6 +171,33 @@ struct Object {
 constexpr int kMaxObjects = 24;
 constexpr int kMaxTiles = 96;  // platforms the stage may have (side tables are this long)
 
+enum class HazardKind : std::uint8_t { None, CometWarn, Comet, RockWarn, Rock };
+
+struct HazardItem {
+  HazardKind kind = HazardKind::None;
+  std::int8_t dir = 0;              // a comet's direction
+  std::int8_t redirected_by = -1;   // whoever steered a comet (a wall, a bumper, a gust)
+  fp::Vec2 pos{};
+  fp::Vec2 vel{};
+  std::int16_t timer = 0;           // ticks of warning left
+  std::array<std::int16_t, 4> cool{};  // a comet: ticks before it hits a seat again
+};
+constexpr int kMaxHazards = 12;
+
+enum class TidePhase : std::uint8_t { Calm, Warn, Rise, Hold, Fall };
+enum class GalePhase : std::uint8_t { Off, Warn, Blow };
+
+struct Hazards {
+  std::array<std::int16_t, kMaxHazardSpecs> timers{};  // ticks until each spec next fires
+  std::array<HazardItem, kMaxHazards> list{};
+  TidePhase tide = TidePhase::Calm;
+  std::int16_t tide_timer = 0;
+  fp::Fixed tide_level{};
+  GalePhase gale = GalePhase::Off;
+  std::int8_t gale_dir = 0;
+  std::int16_t gale_timer = 0;
+};
+
 // Who last put stress on a tile, so a player it drops is credited to them.
 struct TileBlame {
   std::int8_t by = -1;
@@ -168,6 +218,7 @@ struct State {
   std::array<Object, kMaxObjects> objects{};
   std::array<TileBlame, kMaxTiles> tile_blame{};  // by stage platform
   std::array<std::int8_t, kMaxTiles> slab_hp{};   // by stage platform: hit points left of a sturdy slab
+  Hazards hazards;
 };
 
 State make_state(const Rules& rules);

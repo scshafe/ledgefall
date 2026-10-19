@@ -73,7 +73,15 @@ difference will be absorbed.
   on a head is a stomp (bounce, slow, tile stress), a slow one rides.
   Stages are data (`src/stage.cpp`): lost-footing's layouts (0.32 units a pixel
   across, 0.26 up so one jump still reaches the next tier): Practice (a test
-  floor), Crumble Yard, The Quarry. A sturdy slab is a platform on the stress
+  floor), Crumble Yard, The Quarry, Tide Pools, Gale Bridge.
+  Stage hazards (`src/hazards.cpp`) run on their rhythm from the match's random
+  stream, each announced before it acts: comets skim lanes (a wall or bumper
+  reflects one and its owner is credited with what it hits next; a gust can
+  turn it), rocks fall (aimed at slabs, players or anywhere), the tide rises
+  and drowns, a gale blows. Overtime shortens their gaps by 15% a step (to
+  40%). A respawned player is untouchable by hazards and contact for 2 s.
+  Not yet: the respawn halo (fighter-physics#21), conveyor belts and bobbing
+  decks (Conveyor Sky, Sinking Ship). A sturdy slab is a platform on the stress
   model with no rates; its hit points are in the state, `damage_tile` breaks it
   at 0 (the engine sends it Gone and brings it back whole after 8 s), and the
   collapse wears slabs down. Done: all of Ferro's kit (lodestone, polarity, ingot: loose metal a lodestone pulls changes owner, and so does its credit), Mason's Wall and Anvil, Fern's Thorns and Roots, Dab's Rub out, all of Fuse's kit (bumper, charge, saw), all of Pip's kit (Spring with its air launch, Gust, Drill), all of Glim's kit.

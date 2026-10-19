@@ -77,6 +77,22 @@ void apply_wind_and_drill(const Rules& rules, State& state, std::vector<fp::Inte
 // Pip's drill lands (from the engine's Landed events), after the engine has stepped.
 void drill_landings(const Rules& rules, State& state, const fp::Events& events, fp::Events& scratch);
 
+// The match's random stream: an integer in [lo, hi].
+std::uint32_t next_random(State& s);
+int rand_int(State& s, int lo, int hi);
+
+// Stage hazards: fire on their rhythm, warn, act. After the engine has stepped.
+void update_hazards(const Rules& rules, State& state, fp::Events& scratch);
+
+// Stage wind (a gale), before the engine steps.
+void apply_gale(const Rules& rules, State& state);
+
+// Whether the tide has swallowed a player standing at (x, y).
+bool drowned(const State& state, const fp::EntityState& e);
+
+// The shortening of hazard gaps in overtime (percent of the normal gap).
+int hazard_percent(std::uint32_t tick);
+
 // Per tick, before the engine steps: pending placements arm and appear.
 void arm_pending(const Rules& rules, State& state, fp::Events& events);
 
