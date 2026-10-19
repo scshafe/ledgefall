@@ -159,6 +159,11 @@ bool cast(const Rules& rules, State& state, int seat, int slot, const Input& in,
     case Character::Dab:  // the decoy and hollow tile wait on fighter-physics#21
       if (slot == 2) done = cast_rub(state, rules, seat);
       break;
+    case Character::Ferro:
+      if (slot == 0) done = cast_lodestone(state, rules, seat);
+      else if (slot == 1) done = cast_polarity(state, rules, seat);
+      else done = cast_anvil(state, rules, seat, in, true);  // the ingot
+      break;
     case Character::Glim:  // glue, oil and acid, each a lob
       done = throw_lob(state, rules, seat, slot == 0 ? Payload::Glue : slot == 1 ? Payload::Oil : Payload::Acid, in);
       break;

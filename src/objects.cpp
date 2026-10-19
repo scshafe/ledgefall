@@ -48,6 +48,12 @@ const Fixed kRootsAhead = fx100(3520), kRootsReach = fx100(4000);
 const Fixed kRubNear = fx100(256), kRubReach = fx100(5440);
 constexpr int kRubDelay = 30;
 
+// Ferro's lodestone (lost-footing's numbers at 0.32 units a pixel).
+const Fixed kMagnetRadius = fx100(576), kMagnetReach = fx100(7680), kMagnetHold = fx100(768);
+const Fixed kMagnetStrength = fx100(16), kMagnetBase = fx100(4), kMagnetMaxSpeed = fx100(448), kMagnetBurst = fx100(352);
+const Fixed kMagnetAhead = fx100(2240), kMagnetLift = fx100(770);
+constexpr int kMagnetLife = 300, kMagnetArm = 10, kMagnetFlip = 150;
+
 constexpr int kDrillHopTicks = 10;
 const Fixed kDrillHop = fx100(180);     // 8 px/tick up
 const Fixed kDrillDive = fx100(350);    // 16 px/tick down
@@ -94,6 +100,39 @@ bool circle_box(Fixed cx, Fixed cy, Fixed r, const fp::Rect& b) {
   const Fixed ny = cy < b.bottom ? b.bottom : cy > b.top ? b.top : cy;
   const Fixed dx = cx - nx, dy = cy - ny;
   return dx * dx + dy * dy < r * r;
+}
+
+struct Pull {
+  bool any = false;
+  Fixed ax{}, ay{};
+  const Object* by = nullptr;
+  const Object* held = nullptr;  // the lodestone it hangs on
+};
+
+// What the lodestones do to a loose thing at (x, y): pull it (push, while flipped), harder the
+// closer it is; within reach of the pole it hangs on it.
+Pull magnet_pull(const State& state, Fixed x, Fixed y) {
+  Pull p;
+  for (const Object& m : state.objects) {
+    if (m.kind != ObjectKind::Magnet || m.arm > 0) continue;
+    const Fixed dx = m.pos.x - x, dy = m.pos.y - y;
+    const Fixed d = fx_sqrt(dx * dx + dy * dy);
+    if (d > kMagnetReach) continue;
+    const bool push = m.uses == 1;
+    if (!push && d < kMagnetHold) p.held = &m;
+    if (d < Fixed::one()) continue;
+    Fixed a = kMagnetStrength * (Fixed::one() - d / kMagnetReach) + kMagnetBase;
+    if (push) a = Fixed::zero() - a;
+    p.ax = p.ax + a * dx / d;
+    p.ay = p.ay + a * dy / d;
+    p.by = &m;
+    p.any = true;
+  }
+  return p;
+}
+
+Fixed cap_speed(Fixed v) {
+  return v > kMagnetMaxSpeed ? kMagnetMaxSpeed : v < Fixed::zero() - kMagnetMaxSpeed ? Fixed::zero() - kMagnetMaxSpeed : v;
 }
 
 Object* free_object(State& state) {
@@ -179,6 +218,18 @@ void land(const Rules& rules, State& state, const Object& lob, const Surface& on
 // An anvil falls (or lies on a slab for a moment). Crossing a surface it
 // breaks what it can; every surface at the highest top crossed is hit.
 void update_anvil(const Rules& rules, State& state, Object& o, fp::Events& scratch) {
+  const Pull pull = magnet_pull(state, o.pos.x, o.pos.y + kAnvilHeight / Fixed::from_int(2));
+  if (pull.any) {  // iron: a lodestone lifts it off the floor and carries it
+    o.owner = pull.by->owner;
+    o.rest = 0;
+    if (pull.held != nullptr) {
+      o.pos = {pull.held->pos.x, pull.held->pos.y - kAnvilHeight / Fixed::from_int(2)};
+      o.vel = {};
+      return;
+    }
+    o.vel.x = cap_speed((o.vel.x + pull.ax) * fx100(95));
+    o.vel.y = cap_speed((o.vel.y + pull.ay + kAnvilGravity) * fx100(95));
+  }
   if (o.rest > 0) {
     if (--o.rest <= 0) o = {};
     return;
@@ -243,7 +294,7 @@ void update_anvil(const Rules& rules, State& state, Object& o, fp::Events& scrat
         o.rest = kAnvilRestTicks;
         return;
       }
-      if (o.breaks >= kAnvilMaxBreaks) {
+      if (o.breaks >= o.uses) {
         o = {};
         return;
       }
@@ -286,6 +337,22 @@ void bounce_off(const Rules& rules, State& state, Object& b, int seat) {
 
 void update_bumper(const Rules& rules, State& state, Object& b) {
   for (auto& c : b.cool) c = static_cast<std::int16_t>(c > 0 ? c - 1 : 0);
+  const Pull pull = magnet_pull(state, b.pos.x, b.pos.y);
+  if (pull.any) {
+    b.owner = pull.by->owner;
+    if (pull.held != nullptr) {
+      b.pos = pull.held->pos;
+      b.vel = {};
+    } else {
+      b.vel.x = cap_speed((b.vel.x + pull.ax) * fx100(92));
+      b.vel.y = cap_speed((b.vel.y + pull.ay) * fx100(92));
+    }
+  } else {
+    b.vel = b.vel * fx100(90);
+    if (fp::abs(b.vel.x) < fx100(2)) b.vel.x = Fixed::zero();
+    if (fp::abs(b.vel.y) < fx100(2)) b.vel.y = Fixed::zero();
+  }
+  b.pos = b.pos + b.vel;
   if (--b.timer <= 0) {
     b = {};
     return;
@@ -377,7 +444,22 @@ void update_charge(const Rules& rules, State& state, Object& c, fp::Events& scra
   each_surface(rules, state, [&](const Surface& s) {
     if (bottom == s.top && c.pos.x >= s.left && c.pos.x <= s.right) held = true;
   });
-  if (!held) {
+  const Pull pull = magnet_pull(state, c.pos.x, c.pos.y);
+  if (pull.any) {  // pulled loose: it flies to the lodestone and hangs there, still counting down
+    c.owner = pull.by->owner;
+    if (pull.held != nullptr) {
+      c.pos = pull.held->pos;
+      c.vel = {};
+    } else {
+      c.vel.x = cap_speed((c.vel.x + pull.ax) * fx100(95));
+      c.vel.y = cap_speed((c.vel.y + pull.ay) * fx100(95));
+      c.pos = c.pos + c.vel;
+    }
+  } else if (!held) {
+    if (c.vel.x != Fixed::zero()) {  // thrown by a flipped lodestone
+      c.pos.x = c.pos.x + c.vel.x;
+      c.vel.x = fp::abs(c.vel.x) < fx100(5) ? Fixed::zero() : c.vel.x * fx100(90);
+    }
     const Fixed prev = bottom;
     c.vel.y = c.vel.y - kObjGravity;
     if (c.vel.y < Fixed::zero() - kObjMaxFall) c.vel.y = Fixed::zero() - kObjMaxFall;
@@ -408,6 +490,11 @@ void update_saw(const Rules& rules, State& state, Object& o, fp::Events& scratch
   if (--o.timer <= 0) {
     o = {};
     return;
+  }
+  const Pull pull = magnet_pull(state, o.pos.x, o.pos.y);
+  if (pull.any) {
+    o.owner = pull.by->owner;
+    if (state.world.frame % 20 == 0 && fp::abs(pull.ax) > fx100(1)) o.vel.x = pull.ax > Fixed::zero() ? Fixed::one() : Fixed::from_int(-1);
   }
   const Fixed bottom = o.pos.y - kSawRadius;
   Fixed speed = kSawSpeed;
@@ -551,6 +638,12 @@ void update_objects(const Rules& rules, State& state, fp::Events& scratch) {
   for (Object& o : state.objects) {
     if (o.kind == ObjectKind::Lob) {
       const fp::Vec2 prev = o.pos;
+      const Pull pull = magnet_pull(state, o.pos.x, o.pos.y);
+      if (pull.any) {  // a lodestone bends it, and what it does next is Ferro's
+        o.owner = pull.by->owner;
+        o.vel.x = o.vel.x + pull.ax;
+        o.vel.y = o.vel.y + pull.ay;
+      }
       o.vel.y = o.vel.y - kLobGravity;
       for (const Object& g : state.objects) {  // gusts push lobs in flight
         if (g.kind != ObjectKind::Gust || g.arm > 0) continue;
@@ -588,6 +681,10 @@ void update_objects(const Rules& rules, State& state, fp::Events& scratch) {
       if (o.pos.y < blast.bottom || o.pos.x < blast.left || o.pos.x > blast.right) o = {};
     } else if (o.kind == ObjectKind::Anvil) {
       update_anvil(rules, state, o, scratch);
+    } else if (o.kind == ObjectKind::Magnet) {
+      if (o.arm > 0) --o.arm;
+      if (o.uses == 1 && --o.rest <= 0) o.uses = 0;  // the flip wears off
+      if (--o.timer <= 0) o = {};
     } else if (o.kind == ObjectKind::Roots) {
       update_roots(rules, state, o, scratch);
     } else if (o.kind == ObjectKind::Rub) {
@@ -714,7 +811,7 @@ void drill_landings(const Rules& rules, State& state, const fp::Events& events, 
 
 namespace ledgefall::detail {
 
-bool cast_anvil(State& state, const Rules& rules, int seat, const Input& in) {
+bool cast_anvil(State& state, const Rules& rules, int seat, const Input& in, bool ingot) {
   Object* o = nullptr;
   for (Object& c : state.objects) {
     if (c.kind == ObjectKind::None) {
@@ -728,7 +825,8 @@ bool cast_anvil(State& state, const Rules& rules, int seat, const Input& in) {
   const bool forward = (in.move_x > 25 && e.facing > 0) || (in.move_x < -25 && e.facing < 0);
   *o = Object{ObjectKind::Anvil, static_cast<std::int8_t>(seat), Payload::Glue,
               {e.pos.x + fx100(384 * e.facing), e.pos.y + m.body_height - fx100(450)},
-              {fx100((forward ? 160 : 112) * e.facing), fx100(160)}, {}, {}, 0, 0, 0, 0};
+              {fx100((forward ? 160 : 112) * e.facing), fx100(160)}, {}, {}, 0, 0, 0, 0,
+              static_cast<std::int8_t>(ingot ? 1 : kAnvilMaxBreaks)};
   return true;
 }
 
@@ -755,6 +853,8 @@ fp::Rect object_rect(const Object& o) {
       return {o.pos.x - kChargeRadius, o.pos.x + kChargeRadius, o.pos.y - kChargeRadius, o.pos.y + kChargeRadius};
     case ObjectKind::Saw:
       return {o.pos.x - kSawRadius, o.pos.x + kSawRadius, o.pos.y - kSawRadius, o.pos.y + kSawRadius};
+    case ObjectKind::Magnet:
+      return {o.pos.x - kMagnetRadius, o.pos.x + kMagnetRadius, o.pos.y - kMagnetRadius, o.pos.y + kMagnetRadius};
     case ObjectKind::Roots:
       return {o.pos.x - fx100(300), o.pos.x + fx100(300), o.pos.y, o.pos.y + fx100(500)};
     case ObjectKind::Rub:
@@ -908,6 +1008,70 @@ bool cast_rub(State& state, const Rules& rules, int seat) {
   if (o == nullptr) return false;
   *o = Object{ObjectKind::Rub, static_cast<std::int8_t>(seat), Payload::Glue, {x0, own.top}, {}, x0, x0 + kRubReach,
               static_cast<std::int16_t>(kRubDelay)};
+  return true;
+}
+
+}  // namespace ledgefall::detail
+
+namespace ledgefall::detail {
+
+bool cast_lodestone(State& state, const Rules& rules, int seat) {
+  for (Object& o : state.objects) {  // one at once
+    if (o.kind == ObjectKind::Magnet && o.owner == seat) o = {};
+  }
+  Object* slot = nullptr;
+  for (Object& o : state.objects) {
+    if (o.kind == ObjectKind::None) {
+      slot = &o;
+      break;
+    }
+  }
+  if (slot == nullptr) return false;
+  const fp::EntityState& e = state.world.entities[static_cast<std::size_t>(seat)];
+  const fp::MovementParams& m = rules.engine.params[static_cast<std::size_t>(seat)];
+  *slot = Object{ObjectKind::Magnet, static_cast<std::int8_t>(seat), Payload::Glue,
+                 {e.pos.x + kMagnetAhead * Fixed::from_int(e.facing), e.pos.y + m.body_height / Fixed::from_int(2) + kMagnetLift}, {}, {}, {},
+                 static_cast<std::int16_t>(kMagnetLife), static_cast<std::int16_t>(kMagnetArm)};
+  return true;
+}
+
+// Polarity: flips the caster's lodestone for 2.5 s; everything loose within reach is thrown away at once.
+bool cast_polarity(State& state, const Rules& rules, int seat) {
+  (void)rules;
+  Object* m = nullptr;
+  for (Object& o : state.objects) {
+    if (o.kind == ObjectKind::Magnet && o.owner == seat && o.arm == 0) m = &o;
+  }
+  if (m == nullptr) return false;  // nothing to flip
+  m->uses = 1;
+  m->rest = kMagnetFlip;
+  for (Object& o : state.objects) {
+    if (&o == m || o.kind == ObjectKind::None) continue;
+    Fixed cx = o.pos.x, cy = o.pos.y;
+    if (o.kind == ObjectKind::Anvil) cy = cy + kAnvilHeight / Fixed::from_int(2);
+    const Fixed dx = cx - m->pos.x, dy = cy - m->pos.y;
+    Fixed d = fx_sqrt(dx * dx + dy * dy);
+    if (d > kMagnetReach) continue;
+    if (d < Fixed::one()) d = Fixed::one();
+    const fp::Vec2 v{dx / d * kMagnetBurst, dy / d * kMagnetBurst};
+    switch (o.kind) {
+      case ObjectKind::Anvil:
+        o.rest = 0;
+        o.vel = v;
+        break;
+      case ObjectKind::Lob:
+      case ObjectKind::Bumper:
+      case ObjectKind::Charge:
+        o.vel = v;
+        break;
+      case ObjectKind::Saw:
+        o.vel.x = dx < Fixed::zero() ? Fixed::from_int(-1) : Fixed::one();
+        break;
+      default:
+        continue;
+    }
+    o.owner = m->owner;
+  }
   return true;
 }
 

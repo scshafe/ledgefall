@@ -12,7 +12,7 @@
 namespace ledgefall {
 namespace {
 
-constexpr std::uint8_t kMagic0 = 'L', kMagic1 = 'F', kVersion = 7;
+constexpr std::uint8_t kMagic0 = 'L', kMagic1 = 'F', kVersion = 8;
 constexpr std::size_t kHeaderBytes = 3;
 
 // An integer or an enum, as the unsigned integer of its own width.
@@ -180,7 +180,7 @@ bool plausible(const Rules& rules, const State& s) {
     if (p.used && p.owner < 0) return false;
   }
   for (const Object& o : s.objects) {
-    if (static_cast<int>(o.kind) > static_cast<int>(ObjectKind::Rub) || static_cast<int>(o.payload) > static_cast<int>(Payload::Charge)) return false;
+    if (static_cast<int>(o.kind) > static_cast<int>(ObjectKind::Magnet) || static_cast<int>(o.payload) > static_cast<int>(Payload::Charge)) return false;
     if (o.owner < -1 || o.owner >= n || o.timer < 0 || o.arm < 0 || o.breaks < 0 || o.rest < 0 || o.uses < 0) return false;
     for (auto c : o.cool) {
       if (c < 0) return false;

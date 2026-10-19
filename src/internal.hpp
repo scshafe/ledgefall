@@ -52,7 +52,9 @@ bool cast_rub(State& state, const Rules& rules, int seat);
 // A tile the entity stands on (a stage platform), or -1.
 int tile_under_feet(const Rules& rules, const fp::EntityState& e);
 
-bool cast_anvil(State& state, const Rules& rules, int seat, const Input& in);
+bool cast_anvil(State& state, const Rules& rules, int seat, const Input& in, bool ingot = false);
+bool cast_lodestone(State& state, const Rules& rules, int seat);
+bool cast_polarity(State& state, const Rules& rules, int seat);
 
 // Keep at most `max` placeables of a kind per owner: the oldest goes.
 void limit_owned(const Rules& rules, State& state, int seat, fp::PlaceableKind kind, int max, fp::Events& events,

@@ -45,6 +45,7 @@ public enum Scene {
         case .thorns: return SIMD4(0.35, 0.55, 0.20, 0.9)
         case .roots: return SIMD4(0.45, 0.30, 0.15, 0.8)
         case .rub: return SIMD4(0.95, 0.95, 0.95, 0.35)
+        case .magnet: return SIMD4(0.75, 0.25, 0.85, 1)
         }
     }
 

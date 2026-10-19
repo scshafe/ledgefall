@@ -76,7 +76,7 @@ difference will be absorbed.
   floor), Crumble Yard, The Quarry. A sturdy slab is a platform on the stress
   model with no rates; its hit points are in the state, `damage_tile` breaks it
   at 0 (the engine sends it Gone and brings it back whole after 8 s), and the
-  collapse wears slabs down. Done: Mason's Wall and Anvil, Fern's Thorns and Roots, Dab's Rub out, all of Fuse's kit (bumper, charge, saw), all of Pip's kit (Spring with its air launch, Gust, Drill), all of Glim's kit.
+  collapse wears slabs down. Done: all of Ferro's kit (lodestone, polarity, ingot: loose metal a lodestone pulls changes owner, and so does its credit), Mason's Wall and Anvil, Fern's Thorns and Roots, Dab's Rub out, all of Fuse's kit (bumper, charge, saw), all of Pip's kit (Spring with its air launch, Gust, Drill), all of Glim's kit.
   Lobs and acid puddles are `Object`s in the state (`src/objects.cpp`); glue and
   oil become the engine's sticky and slick patches; tiles remember who last
   stressed them (`tile_blame`), so a tile that drops someone credits its maker.
