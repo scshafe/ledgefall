@@ -89,6 +89,68 @@ void test_standing_still_loses_every_stock() {
   CHECK(s.over);
 }
 
+// A tile one step from breaking, nobody near it.
+void doom_first_tile(State& s) {
+  fp::PlatformState& p = s.world.platforms[0];
+  p.phase = fp::PlatformPhase::Doomed;
+  p.stress = fp::Fixed::from_double(0.999);
+}
+
+void test_overtime_slows_respawn() {
+  const Rules r = rules_for(2, 3);
+  const std::vector<Input> idle(2);
+  State normal = make_state(r);
+  doom_first_tile(normal);
+  step(r, normal, idle);
+  CHECK(normal.world.platforms[0].phase == fp::PlatformPhase::Gone);
+  const int base = normal.world.platforms[0].timer;
+  CHECK(base > 0);
+
+  State late = make_state(r);
+  late.world.frame = kOvertimeStartTick;
+  doom_first_tile(late);
+  step(r, late, idle);
+  CHECK(late.world.platforms[0].phase == fp::PlatformPhase::Gone);
+  CHECK(late.world.platforms[0].timer == base * 3 / 2);  // 50% longer in the first overtime step
+
+  State later = make_state(r);
+  later.world.frame = kOvertimeStartTick + 2 * kOvertimeStepTicks;
+  doom_first_tile(later);
+  step(r, later, idle);
+  CHECK(later.world.platforms[0].timer == base * 5 / 2);  // 3 steps in: 50% more each
+}
+
+void test_collapse_destroys_and_dooms() {
+  const Rules r = rules_for(2, 3);
+  const std::vector<Input> idle(2);
+  State s = make_state(r);
+  s.world.frame = kCollapseStartTick;
+  doom_first_tile(s);
+  step(r, s, idle);
+  CHECK(s.world.platforms[0].phase == fp::PlatformPhase::Destroyed);  // nothing broken comes back
+
+  // On a tick that is a multiple of half a second a random tile is doomed, the same one for the same seed.
+  auto doomed_after = [&](std::uint32_t seed) {
+    auto rules = make_rules({2, 3, seed});
+    State t = make_state(*rules);
+    t.world.frame = kCollapseStartTick - 1;
+    step(*rules, t, idle);
+    int n = 0, first = -1;
+    for (std::size_t i = 0; i < t.world.platforms.size(); ++i) {
+      if (t.world.platforms[i].phase == fp::PlatformPhase::Doomed) {
+        ++n;
+        if (first < 0) first = static_cast<int>(i);
+      }
+    }
+    CHECK(n == 1);
+    return first;
+  };
+  CHECK(doomed_after(7) == doomed_after(7));
+  bool differs = false;
+  for (std::uint32_t seed = 1; seed < 20; ++seed) differs = differs || doomed_after(seed) != doomed_after(7);
+  CHECK(differs);
+}
+
 void test_snapshot_round_trip() {
   const Rules r = rules_for(2, 3);
   State s = make_state(r);
@@ -127,6 +189,8 @@ int main() {
   test_last_with_stocks_wins();
   test_same_tick_tie_goes_to_lowest_seat();
   test_standing_still_loses_every_stock();
+  test_overtime_slows_respawn();
+  test_collapse_destroys_and_dooms();
   test_snapshot_round_trip();
   return test::finish();
 }

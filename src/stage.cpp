@@ -1,6 +1,5 @@
-// The stage: three tiers of crumbling one-way tiles. This is the one place
-// that knows how a platform crumbles, so a richer model (stress, see
-// scshafe/fighter-physics#16) replaces it here and nowhere else.
+// The stage: three tiers of crumbling one-way tiles, with lost-footing's
+// stress model (docs/lost-footing-brief.md; its design.md, "Crumble platform").
 #include "ledgefall/match.hpp"
 
 namespace ledgefall {
@@ -10,10 +9,23 @@ using fp::Fixed;
 
 constexpr int kTileWidth = 16;
 constexpr int kTileThickness = 4;
-// Ticks from first touch to the tile falling, and from falling to its return
-// (lost-footing: about 0.9 s standing, back 4.75 s after it broke).
-constexpr int kShakeTicks = 50;
+// Lost-footing's per-tick numbers (60 ticks a second, as ours), with its pixel
+// speeds scaled to this world (lost-footing run speed 5.4 px, ours 1.76 units).
+// A tile is back 4.75 s after it breaks.
 constexpr int kRespawnTicks = 285;
+
+fp::PlatformStress tile_stress() {
+  fp::PlatformStress s;
+  s.shake_at = Fixed::from_double(0.45);
+  s.doom_at = Fixed::from_double(0.75);
+  s.still_rate = Fixed::from_double(1.0 / 56);   // a player standing still: about 0.9 s
+  s.moving_rate = Fixed::from_double(1.0 / 110); // a player moving on it: about 3 s of pacing
+  s.still_speed = Fixed::from_double(0.36);      // lost-footing: under 1.1 px/tick
+  s.rider_share = Fixed::from_double(0.6);       // someone riding on your head: 60% of their load
+  s.doom_rate = Fixed::from_double(1.0 / 80);    // doomed: it keeps going by itself
+  s.decay = Fixed::from_double(1.0 / 260);       // nobody on it
+  return s;
+}
 
 void add_row(fp::Stage& stage, int left, int tiles, int top) {
   for (int i = 0; i < tiles; ++i) {
@@ -22,7 +34,7 @@ void add_row(fp::Stage& stage, int left, int tiles, int top) {
     const int l = left + i * kTileWidth;
     p.rect = {Fixed::from_int(l), Fixed::from_int(l + kTileWidth), Fixed::from_int(top - kTileThickness),
               Fixed::from_int(top)};
-    p.shake_frames = kShakeTicks;
+    p.stress = tile_stress();
     p.respawn_frames = kRespawnTicks;
     stage.platforms.push_back(p);
   }

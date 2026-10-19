@@ -41,10 +41,54 @@ fp::Intent to_intent(const Input& in) {
   return i;
 }
 
+// mulberry32: the match's random stream, in the state so rollback restores it.
+std::uint32_t next_random(State& s) {
+  s.rng += 0x6D2B79F5u;
+  std::uint32_t t = s.rng;
+  t = (t ^ (t >> 15)) * (t | 1u);
+  t ^= t + (t ^ (t >> 7)) * (t | 61u);
+  return t ^ (t >> 14);
+}
+
+// Overtime and collapse, after the engine has stepped.
+void overtime(const Rules& rules, State& state, const fp::Events& events) {
+  const std::uint32_t tick = state.world.frame;
+  if (tick < static_cast<std::uint32_t>(kOvertimeStartTick)) return;
+  const bool collapse = tick >= static_cast<std::uint32_t>(kCollapseStartTick);
+  const std::int32_t level = static_cast<std::int32_t>((tick - kOvertimeStartTick) / kOvertimeStepTicks) + 1;
+
+  // A tile that broke this tick comes back later, or never.
+  fp::Events scratch;
+  for (const fp::Event& e : events) {
+    if (e.type != fp::EventType::PlatformCrumbled) continue;
+    if (collapse) {
+      fp::destroy_platform(rules.engine, state.world, e.id, scratch);
+    } else {
+      fp::PlatformState& p = state.world.platforms[static_cast<std::size_t>(e.id)];
+      p.timer = p.timer * (2 + level) / 2;
+    }
+  }
+
+  // Collapse: a random tile still standing is doomed every half second.
+  if (collapse && tick % static_cast<std::uint32_t>(kCollapseDoomTicks) == 0) {
+    const std::size_t n = state.world.platforms.size();
+    const std::size_t start = next_random(state) % n;
+    for (std::size_t k = 0; k < n; ++k) {
+      const std::size_t i = (start + k) % n;
+      const fp::PlatformState& p = state.world.platforms[i];
+      if (p.phase != fp::PlatformPhase::Solid && p.phase != fp::PlatformPhase::Shaking) continue;
+      const fp::PlatformStress& st = rules.engine.stage.platforms[i].stress;
+      if (p.stress < st.doom_at) fp::add_stress(rules.engine, state.world, static_cast<int>(i), st.doom_at - p.stress, scratch);
+      break;
+    }
+  }
+}
+
 }  // namespace
 
 State make_state(const Rules& rules) {
   State s;
+  s.rng = rules.setup.seed;
   s.world = fp::make_world(rules.engine);
   const int n = rules.setup.players;
   for (int i = 0; i < n; ++i) {
@@ -64,6 +108,7 @@ void step(const Rules& rules, State& state, std::span<const Input> inputs) {
   for (std::size_t i = 0; i < n && i < inputs.size(); ++i) intents[i] = to_intent(inputs[i]);
   fp::Events events;
   fp::step(rules.engine, state.world, intents, events);
+  overtime(rules, state, events);
 
   // Players eliminated this tick lose a stock; the others' respawn clocks run.
   std::vector<int> lost_last;
