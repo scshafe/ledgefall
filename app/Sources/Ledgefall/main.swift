@@ -1,18 +1,25 @@
 import AppKit
 import LedgefallKit
 import MetalKit
+import SwiftUI
 
-// A MTKView that takes keyboard focus and records which keys are held.
+// A MTKView that takes keyboard focus, records which keys are held and reports key presses.
 final class GameView: MTKView {
-    private(set) var held = Set<UInt16>()
+    weak var model: AppModel?
 
     override var acceptsFirstResponder: Bool { true }
 
-    override func keyDown(with event: NSEvent) { held.insert(event.keyCode) }
-    override func keyUp(with event: NSEvent) { held.remove(event.keyCode) }
+    override func keyDown(with event: NSEvent) {
+        guard let model else { return }
+        model.heldKeys.insert(event.keyCode)
+        if !event.isARepeat { model.keyPressed(event.keyCode) }
+    }
+
+    override func keyUp(with event: NSEvent) { model?.heldKeys.remove(event.keyCode) }
+
     // Keys held when the window loses focus would otherwise stay "held".
     override func resignFirstResponder() -> Bool {
-        held.removeAll()
+        model?.heldKeys.removeAll()
         return super.resignFirstResponder()
     }
 }
@@ -20,36 +27,31 @@ final class GameView: MTKView {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow?
     private var renderer: Renderer?
-    private var controllers: Controllers?
+    private let model = AppModel()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Every seat starts as a bot. A person joins by using a device (a keyboard
-        // cluster: WASD, arrows or IJKL; or any button on a controller) and takes
-        // the lowest free seat from the bots; an unplugged controller gives it back.
-        guard let match = Match(players: 4, stocks: 3) else { fatalError("could not create a match") }
-        for seat in 0..<4 { match.setBot(seat: seat, level: .normal) }
-        var seating = Seating()
-        let controllers = Controllers()
-        let loop = GameLoop(match: match)
-
         let rect = NSRect(x: 0, y: 0, width: 1280, height: 720)
         let view = GameView(frame: rect, device: MTLCreateSystemDefaultDevice())
+        view.model = model
         view.preferredFramesPerSecond = 60
         view.colorPixelFormat = .bgra8Unorm
-        guard let renderer = Renderer(view: view, loop: loop, inputs: { [unowned view] in
-            let update = seating.update(DeviceFrame(keys: view.held, pads: controllers.states()))
-            for seat in update.joined { match.setBot(seat: seat, level: nil) }
-            for seat in update.left { match.setBot(seat: seat, level: .normal) }
-            return update.inputs
-        }) else { fatalError("Metal is not available") }
+        guard let renderer = Renderer(view: view, model: model) else { fatalError("Metal is not available") }
         view.delegate = renderer
         self.renderer = renderer
-        self.controllers = controllers
+
+        // The SwiftUI screens sit over the Metal view; the Metal view keeps the keyboard.
+        let overlay = NSHostingView(rootView: OverlayView(model: model))
+        let content = NSView(frame: rect)
+        for sub in [view, overlay] {
+            sub.frame = content.bounds
+            sub.autoresizingMask = [.width, .height]
+            content.addSubview(sub)
+        }
 
         let window = NSWindow(contentRect: rect, styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered, defer: false)
         window.title = "Ledgefall"
-        window.contentView = view
+        window.contentView = content
         window.center()
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(view)

@@ -22,8 +22,17 @@ public struct Seating {
     public static let seatCount = 4
 
     public private(set) var devices: [InputDevice?] = Array(repeating: nil, count: Seating.seatCount)
+    /// Seats at or beyond this are not in the match; no device takes them.
+    public private(set) var capacity = Seating.seatCount
 
     public init() {}
+
+    /// Seat only the first `n` seats. A device in a seat that goes is released
+    /// and joins again the next time it is used.
+    public mutating func limit(to n: Int) {
+        capacity = max(0, min(n, Seating.seatCount))
+        for seat in capacity..<Seating.seatCount { devices[seat] = nil }
+    }
 
     public struct Update: Equatable {
         public var inputs: [PlayerInput]  // one per seat; empty for seats without a device
@@ -37,7 +46,8 @@ public struct Seating {
 
     @discardableResult
     private mutating func join(_ device: InputDevice) -> Int? {
-        guard seat(of: device) == nil, let free = devices.firstIndex(where: { $0 == nil }) else { return nil }
+        guard seat(of: device) == nil,
+              let free = devices[..<capacity].firstIndex(where: { $0 == nil }) else { return nil }
         devices[free] = device
         return free
     }

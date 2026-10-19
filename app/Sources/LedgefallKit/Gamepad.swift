@@ -3,16 +3,17 @@
 /// mapping to the core's input can be tested without a controller.
 public struct GamepadState: Equatable {
     public var leftX: Float = 0, leftY: Float = 0  // -1...1, y up
-    public var dpadLeft = false, dpadRight = false, dpadDown = false
+    public var dpadLeft = false, dpadRight = false, dpadUp = false, dpadDown = false
     public var south = false, east = false, west = false, north = false  // Xbox A, B, X, Y
 
     public init(leftX: Float = 0, leftY: Float = 0, dpadLeft: Bool = false, dpadRight: Bool = false,
-                dpadDown: Bool = false, south: Bool = false, east: Bool = false, west: Bool = false,
+                dpadUp: Bool = false, dpadDown: Bool = false, south: Bool = false, east: Bool = false, west: Bool = false,
                 north: Bool = false) {
         self.leftX = leftX
         self.leftY = leftY
         self.dpadLeft = dpadLeft
         self.dpadRight = dpadRight
+        self.dpadUp = dpadUp
         self.dpadDown = dpadDown
         self.south = south
         self.east = east
@@ -22,7 +23,7 @@ public struct GamepadState: Equatable {
 
     /// Any press or a stick pushed well off centre: how a controller asks to join.
     public var isActive: Bool {
-        south || east || west || north || dpadLeft || dpadRight || dpadDown || abs(leftX) > 0.5 || abs(leftY) > 0.5
+        south || east || west || north || dpadLeft || dpadRight || dpadUp || dpadDown || abs(leftX) > 0.5 || abs(leftY) > 0.5
     }
 }
 
