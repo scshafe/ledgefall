@@ -27,11 +27,19 @@ constexpr int kMaxStocks = 5;
 constexpr int kDefaultStocks = 3;
 constexpr int kTicksPerSecond = 60;
 constexpr int kRespawnDelayTicks = kTicksPerSecond * 3 / 2;  // 1.5 s after an elimination
+// Every match ends (lost-footing, "Overtime"). From 1:30 of play, every 30 s,
+// platforms take 50% longer to come back. From 3:30 nothing broken comes back
+// and a random tile is doomed every 0.5 s.
+constexpr int kOvertimeStartTick = 90 * kTicksPerSecond;
+constexpr int kOvertimeStepTicks = 30 * kTicksPerSecond;
+constexpr int kCollapseStartTick = 210 * kTicksPerSecond;
+constexpr int kCollapseDoomTicks = kTicksPerSecond / 2;
 
 // What a match is set up with (the lobby's choices).
 struct Setup {
   int players = 2;
   int stocks = kDefaultStocks;
+  std::uint32_t seed = 1;  // the match's one random stream (the lobby picks it)
 };
 
 bool valid(const Setup& s) noexcept;
@@ -59,6 +67,7 @@ struct State {
   std::vector<PlayerState> players;
   std::int8_t winner = -1;  // the winning seat once `over`; -1 if nobody
   bool over = false;
+  std::uint32_t rng = 1;  // mulberry32 state; all randomness in the rules comes from here
 };
 
 State make_state(const Rules& rules);

@@ -13,11 +13,15 @@ namespace {
 constexpr std::uint8_t kMagic0 = 'L', kMagic1 = 'F', kVersion = 1;
 constexpr std::size_t kHeaderBytes = 3;
 constexpr std::size_t kPerPlayerBytes = 3;  // stocks, respawn timer (2)
-constexpr std::size_t kTailBytes = 2;       // winner, over
+constexpr std::size_t kTailBytes = 6;       // winner, over, rng (4)
 
 void put16(std::vector<std::uint8_t>& out, std::uint16_t v) {
   out.push_back(static_cast<std::uint8_t>(v));
   out.push_back(static_cast<std::uint8_t>(v >> 8));
+}
+
+void put32(std::vector<std::uint8_t>& out, std::uint32_t v) {
+  for (int i = 0; i < 4; ++i) out.push_back(static_cast<std::uint8_t>(v >> (8 * i)));
 }
 
 void put64(std::vector<std::uint8_t>& out, std::uint64_t v) {
@@ -32,6 +36,7 @@ void write_own(const State& s, std::vector<std::uint8_t>& out) {
   }
   out.push_back(static_cast<std::uint8_t>(s.winner));
   out.push_back(s.over ? 1 : 0);
+  put32(out, s.rng);
 }
 
 }  // namespace
@@ -79,6 +84,8 @@ bool restore(const Rules& rules, State& state, std::span<const std::uint8_t> byt
   next.winner = static_cast<std::int8_t>(bytes[at]);
   if (next.winner < -1 || next.winner >= static_cast<int>(n) || bytes[at + 1] > 1) return false;
   next.over = bytes[at + 1] == 1;
+  next.rng = static_cast<std::uint32_t>(bytes[at + 2]) | static_cast<std::uint32_t>(bytes[at + 3]) << 8 |
+             static_cast<std::uint32_t>(bytes[at + 4]) << 16 | static_cast<std::uint32_t>(bytes[at + 5]) << 24;
   if (!fp::restore(rules.engine, next.world, bytes.subspan(at + kTailBytes))) return false;
   state = std::move(next);
   return true;

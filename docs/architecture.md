@@ -56,10 +56,14 @@ difference will be absorbed.
   order; only the last step, the lowest seat, exists until placeables do.
 - `hash`, `snapshot` and `restore` cover exactly the `State`; `restore`
   validates its bytes and leaves the state untouched on failure.
-- Known gaps against lost-footing: crumbling is fighter-physics' touch-triggered
-  model, not lost-footing's stress model (requested in
-  scshafe/fighter-physics#16; the model lives only in `src/stage.cpp`), and the
-  respawn halo and post-respawn immunity wait for hazards.
+- Crumbling is lost-footing's stress model (fighter-physics `PlatformStress`,
+  numbers in `src/stage.cpp`), and every match ends: overtime from 1:30 (each
+  30 s a broken tile takes 50% longer to return), collapse from 3:30 (nothing
+  broken returns; a random tile, from the match's seeded generator in the
+  state, is doomed every 0.5 s).
+- Known gaps against lost-footing: the respawn halo and post-respawn immunity
+  wait for hazards; the engine splits a straddler's load equally between the
+  tiles (lost-footing: 75% each).
 
 How determinism is kept honest (all in `./scripts/verify`, so CI runs it on
 Linux and macOS): the golden hash trace of a scripted 4-player match
