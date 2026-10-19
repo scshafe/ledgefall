@@ -39,3 +39,4 @@ params = { kind = "native", name = "ledgefall", date = "2026-10-19" }
 [identity]
 agent = "agent-ledgefall"
 github = ["contents=write", "pull_requests=write", "issues=write", "workflows=write", "actions=write"]
+docker = true
