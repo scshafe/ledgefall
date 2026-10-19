@@ -46,7 +46,7 @@ public struct Flow: Equatable {
                     return .startMatch
                 }
                 selectedRow += 1
-            case .back: break
+            case .back, .pause: break
             }
         case .playing:
             if action == .back || action == .pause { phase = .paused }
