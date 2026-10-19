@@ -109,6 +109,5 @@ final class Renderer: NSObject, MTKViewDelegate {
         encoder.endEncoding()
         commands.present(drawable)
         commands.commit()
-
     }
 }

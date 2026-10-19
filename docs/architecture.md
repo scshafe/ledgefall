@@ -68,6 +68,28 @@ Linux and macOS): the golden hash trace of a scripted 4-player match
 clocks, random sources, unordered containers or threads in the core. The engine
 pin is bumped in a PR of its own (`docs/decisions/0001-engine-pin.md`).
 
+## The app (milestone 2)
+
+`app/` is a Swift package over the core's C face (`include/ledgefall/capi.h`,
+raw Q16.16 integers, no floats), built by `scripts/build-app`, which
+`./scripts/verify` runs on macOS after the core. CI's macos job builds it and
+runs the XCTests; nothing in CI opens the window.
+
+- `CLedgefall`: the C header as a module; the libraries come from CMake.
+- `LedgefallKit`: everything testable without a window: the `Match` wrapper,
+  the scene as a list of quads, the camera, key clusters (WASD, arrows, IJKL),
+  gamepad mapping, `Seating` (drop-in: every seat starts as a bot, a device
+  takes the lowest free seat by being used, an unplugged controller frees
+  it), `Flow` (setup with players 2 to 4 and stocks 1 to 5, match, pause,
+  results) and the fixed-tick `GameLoop`.
+- `Ledgefall`: AppKit window, an `MTKView` drawing flat quads with a shader
+  compiled from source at start-up, SwiftUI screens over it, and
+  GameController.framework for Xbox and other extended gamepads.
+
+Not built yet: rebinding, dead-zone settings, per-seat device menus, sound,
+character art, interpolation between ticks. Bots are the footing bot only (see
+`include/ledgefall/bot.hpp`).
+
 ## Input
 
 The app's input module reads GameController.framework (Xbox and other MFi or
@@ -104,7 +126,8 @@ host is a later owner decision.
 1. Done: core: characters moving on crumbling platforms with lost-footing's
    stocks and winner rules, headless, tested, on the fighter-physics movement
    model.
-2. App: a window that renders the core locally (Metal), with Xbox controller
+2. App (built; the window, shader and controller code are untested by anyone
+   yet): a window that renders the core locally (Metal), with Xbox controller
    and keyboard input; local play against bots.
 3. Server and online play: the core as netplay-kit's `Simulation`, a game
    server image, two Macs in one match over the tailnet.
