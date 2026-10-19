@@ -34,6 +34,40 @@ The dependencies are fighter-physics and netplay-kit through CMake
 `FetchContent` at pinned commits. The pin is bumped deliberately in a PR,
 never by following a branch.
 
+## The core (milestone 1, done)
+
+`include/ledgefall/`, `src/`; tests in `tests/`. It has the shape of
+netplay-kit's `Simulation` interface (`step(frame, inputs)`, `snapshot`,
+`restore`, `hash`, input encode and decode), so the adapter in milestone 3 is
+thin; netplay-kit's interface is not settled yet, and the adapter is where any
+difference will be absorbed.
+
+- `Setup` (2 to 4 players, 1 to 5 stocks, 3 by default) becomes `Rules`: the
+  fighter-physics `Config` (a stage of three tiers of crumbling one-way tiles,
+  a movement table per seat) and the spawn points. It never changes in a match.
+- `State` is plain data: the engine's `fp::World` (entities indexed by seat),
+  each player's stocks and respawn timer, and the result. `step(rules, state,
+  inputs)` is a pure function of the state and one `Input` per seat (a move
+  axis -100..100 and jump and down buttons, two bytes on the wire).
+- An eliminated player loses a stock and returns 1.5 s later at the spawn point
+  farthest from the others still in play. The last player with stocks wins. If
+  the last players go out on the same tick, lost-footing breaks the tie by
+  credited eliminations, fewer self-eliminations, platforms broken, then seat
+  order; only the last step, the lowest seat, exists until placeables do.
+- `hash`, `snapshot` and `restore` cover exactly the `State`; `restore`
+  validates its bytes and leaves the state untouched on failure.
+- Known gaps against lost-footing: crumbling is fighter-physics' touch-triggered
+  model, not lost-footing's stress model (requested in
+  scshafe/fighter-physics#16; the model lives only in `src/stage.cpp`), and the
+  respawn halo and post-respawn immunity wait for hazards.
+
+How determinism is kept honest (all in `./scripts/verify`, so CI runs it on
+Linux and macOS): the golden hash trace of a scripted 4-player match
+(`tests/golden/determinism_hashes.txt`), replay and repeated-rollback tests, and
+`scripts/check-determinism-guards`, which fails on floats, the math library,
+clocks, random sources, unordered containers or threads in the core. The engine
+pin is bumped in a PR of its own (`docs/decisions/0001-engine-pin.md`).
+
 ## Input
 
 The app's input module reads GameController.framework (Xbox and other MFi or
@@ -67,8 +101,9 @@ host is a later owner decision.
 
 ## First milestones
 
-1. Core: one character moving on crumbling platforms with lost-footing's
-   rules, headless, tested, on the fighter-physics movement model.
+1. Done: core: characters moving on crumbling platforms with lost-footing's
+   stocks and winner rules, headless, tested, on the fighter-physics movement
+   model.
 2. App: a window that renders the core locally (Metal), with Xbox controller
    and keyboard input; local play against bots.
 3. Server and online play: the core as netplay-kit's `Simulation`, a game
