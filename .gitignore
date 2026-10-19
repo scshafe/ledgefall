@@ -6,3 +6,4 @@ DerivedData/
 xcuserdata/
 .DS_Store
 compile_commands.json
+/app/.build/
