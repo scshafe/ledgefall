@@ -24,8 +24,17 @@ bool seat_ok(const lf_match* m, int seat) { return m != nullptr && seat >= 0 && 
 
 extern "C" {
 
-lf_match* lf_match_create(int players, int stocks) {
-  auto rules = ledgefall::make_rules({players, stocks});
+lf_match* lf_match_create(int players, int stocks) { return lf_match_create_with(players, stocks, 1, nullptr); }
+
+lf_match* lf_match_create_with(int players, int stocks, uint32_t seed, const uint8_t* characters) {
+  Setup setup;
+  setup.players = players;
+  setup.stocks = stocks;
+  setup.seed = seed;
+  if (characters != nullptr && players >= kMinPlayers && players <= kMaxPlayers) {
+    for (int i = 0; i < players; ++i) setup.characters[static_cast<std::size_t>(i)] = static_cast<Character>(characters[i]);
+  }
+  auto rules = ledgefall::make_rules(setup);
   if (!rules) return nullptr;
   lf_match* m = new (std::nothrow) lf_match;
   if (m == nullptr) return nullptr;
@@ -77,6 +86,11 @@ int lf_match_player(const lf_match* m, int seat, lf_player* out) {
   const PlayerState& p = m->state.players[static_cast<std::size_t>(seat)];
   out->stocks = p.stocks;
   out->respawn_timer = p.respawn_timer;
+  out->character = static_cast<int32_t>(m->rules.setup.characters[static_cast<std::size_t>(seat)]);
+  for (int i = 0; i < 3; ++i) out->cooldown[i] = p.cooldown[static_cast<std::size_t>(i)];
+  out->place = p.place;
+  out->kos = p.stats.kos;
+  out->falls = p.stats.falls;
   return 1;
 }
 

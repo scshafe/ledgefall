@@ -44,7 +44,7 @@ final class Controllers {
                 dpadLeft: pad.dpad.left.isPressed, dpadRight: pad.dpad.right.isPressed,
                 dpadUp: pad.dpad.up.isPressed, dpadDown: pad.dpad.down.isPressed,
                 south: pad.buttonA.isPressed, east: pad.buttonB.isPressed, west: pad.buttonX.isPressed,
-                north: pad.buttonY.isPressed)
+                north: pad.buttonY.isPressed, menu: pad.buttonMenu.isPressed)
         }
         return out
     }

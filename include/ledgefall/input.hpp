@@ -12,8 +12,11 @@ namespace ledgefall {
 enum Button : std::uint8_t {
   kButtonJump = 1 << 0,  // held; a press is the tick it becomes held
   kButtonDown = 1 << 1,  // held: fast-fall in the air, drop through a platform you stand on
+  kButtonPlace = 1 << 2,  // move slot 1: the character's main obstacle (a press casts it)
+  kButtonTrick = 1 << 3,  // move slot 2
+  kButtonBreak = 1 << 4,  // move slot 3: platform destruction
 };
-constexpr std::uint8_t kButtonMask = kButtonJump | kButtonDown;
+constexpr std::uint8_t kButtonMask = kButtonJump | kButtonDown | kButtonPlace | kButtonTrick | kButtonBreak;
 
 constexpr int kAxisMax = 100;  // move_x is -100..100, 100 being full tilt
 

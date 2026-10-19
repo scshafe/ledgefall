@@ -5,10 +5,11 @@ public struct GamepadState: Equatable {
     public var leftX: Float = 0, leftY: Float = 0  // -1...1, y up
     public var dpadLeft = false, dpadRight = false, dpadUp = false, dpadDown = false
     public var south = false, east = false, west = false, north = false  // Xbox A, B, X, Y
+    public var menu = false  // Xbox menu (Start)
 
     public init(leftX: Float = 0, leftY: Float = 0, dpadLeft: Bool = false, dpadRight: Bool = false,
                 dpadUp: Bool = false, dpadDown: Bool = false, south: Bool = false, east: Bool = false, west: Bool = false,
-                north: Bool = false) {
+                north: Bool = false, menu: Bool = false) {
         self.leftX = leftX
         self.leftY = leftY
         self.dpadLeft = dpadLeft
@@ -19,11 +20,12 @@ public struct GamepadState: Equatable {
         self.east = east
         self.west = west
         self.north = north
+        self.menu = menu
     }
 
     /// Any press or a stick pushed well off centre: how a controller asks to join.
     public var isActive: Bool {
-        south || east || west || north || dpadLeft || dpadRight || dpadUp || dpadDown || abs(leftX) > 0.5 || abs(leftY) > 0.5
+        south || east || west || north || menu || dpadLeft || dpadRight || dpadUp || dpadDown || abs(leftX) > 0.5 || abs(leftY) > 0.5
     }
 }
 
@@ -46,7 +48,10 @@ public enum GamepadMapping {
         }
         return PlayerInput(
             moveX: Int8((axis * 100).rounded()),
-            jump: pad.south || pad.north,
-            down: pad.dpadDown || pad.leftY < -downThreshold)
+            jump: pad.south,
+            down: pad.dpadDown || pad.leftY < -downThreshold,
+            place: pad.west,   // X
+            trick: pad.east,   // B
+            brk: pad.north)    // Y
     }
 }

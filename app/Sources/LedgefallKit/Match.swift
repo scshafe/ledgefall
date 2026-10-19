@@ -5,11 +5,18 @@ public struct PlayerInput: Equatable {
     public var moveX: Int8  // -100...100
     public var jump: Bool
     public var down: Bool
+    public var place: Bool  // move slot 1
+    public var trick: Bool  // move slot 2
+    public var brk: Bool    // move slot 3 ("break" is a Swift keyword)
 
-    public init(moveX: Int8 = 0, jump: Bool = false, down: Bool = false) {
+    public init(moveX: Int8 = 0, jump: Bool = false, down: Bool = false,
+                place: Bool = false, trick: Bool = false, brk: Bool = false) {
         self.moveX = moveX
         self.jump = jump
         self.down = down
+        self.place = place
+        self.trick = trick
+        self.brk = brk
     }
 }
 
@@ -35,9 +42,24 @@ public struct PlatformView {
     public var timer: Int
 }
 
+/// The characters (fighters), in the core's order.
+public enum Fighter: Int, CaseIterable {
+    case mason, glim, pip, fuse, dab, fern, ferro
+
+    public var name: String {
+        ["Mason", "Glim", "Pip", "Fuse", "Dab", "Fern", "Ferro"][rawValue]
+    }
+}
+
 public struct PlayerView {
     public var stocks: Int
     public var respawnTimer: Int
+    public var character: Fighter
+    /// Ticks until each of the three moves can be cast again.
+    public var cooldown: [Int]
+    public var place: Int
+    public var kos: Int
+    public var falls: Int
 }
 
 /// The Swift face of one match: owns the core's `lf_match`.
@@ -49,9 +71,16 @@ public final class Match {
     public let players: Int
 
     /// Nil unless `players` is 2...4 and `stocks` is 1...5.
-    public init?(players: Int, stocks: Int = 3) {
-        guard let h = lf_match_create(Int32(players), Int32(stocks)) else { return nil }
-        handle = h
+    public init?(players: Int, stocks: Int = 3, seed: UInt32 = 1, characters: [Fighter]? = nil) {
+        let handle: OpaquePointer?
+        if let characters, characters.count >= players {
+            let raw = characters.prefix(players).map { UInt8($0.rawValue) }
+            handle = lf_match_create_with(Int32(players), Int32(stocks), seed, raw)
+        } else {
+            handle = lf_match_create_with(Int32(players), Int32(stocks), seed, nil)
+        }
+        guard let h = handle else { return nil }
+        self.handle = h
         self.players = players
     }
 
@@ -71,6 +100,9 @@ public final class Match {
             var buttons: UInt8 = 0
             if input.jump { buttons |= UInt8(LF_BUTTON_JUMP) }
             if input.down { buttons |= UInt8(LF_BUTTON_DOWN) }
+            if input.place { buttons |= UInt8(LF_BUTTON_PLACE) }
+            if input.trick { buttons |= UInt8(LF_BUTTON_TRICK) }
+            if input.brk { buttons |= UInt8(LF_BUTTON_BREAK) }
             return lf_input(move_x: input.moveX, buttons: buttons)
         }
         lf_match_step(handle, &raw)
@@ -87,8 +119,14 @@ public final class Match {
 
     public func player(_ seat: Int) -> PlayerView {
         var p = lf_player()
-        guard lf_match_player(handle, Int32(seat), &p) != 0 else { return PlayerView(stocks: 0, respawnTimer: 0) }
-        return PlayerView(stocks: Int(p.stocks), respawnTimer: Int(p.respawn_timer))
+        guard lf_match_player(handle, Int32(seat), &p) != 0 else {
+            return PlayerView(stocks: 0, respawnTimer: 0, character: .mason, cooldown: [0, 0, 0], place: 0, kos: 0, falls: 0)
+        }
+        return PlayerView(
+            stocks: Int(p.stocks), respawnTimer: Int(p.respawn_timer),
+            character: Fighter(rawValue: Int(p.character)) ?? .mason,
+            cooldown: [Int(p.cooldown.0), Int(p.cooldown.1), Int(p.cooldown.2)],
+            place: Int(p.place), kos: Int(p.kos), falls: Int(p.falls))
     }
 
     public func entity(_ seat: Int) -> EntityView? {

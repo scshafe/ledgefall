@@ -14,6 +14,8 @@ final class MatchTests: XCTestCase {
         let match = try XCTUnwrap(Match(players: 3))
         XCTAssertEqual(match.players, 3)
         XCTAssertEqual(match.player(0).stocks, 3)
+        XCTAssertEqual(match.player(0).character, .mason)
+        XCTAssertEqual(match.player(0).cooldown, [0, 0, 0])
         XCTAssertEqual(match.tick, 0)
         XCTAssertFalse(match.isOver)
         XCTAssertGreaterThan(match.platformCount, 0)
@@ -34,6 +36,13 @@ final class MatchTests: XCTestCase {
         XCTAssertTrue(match.isOver)
         XCTAssertEqual(match.tick, ticks)
         XCTAssertNotNil(match.winner)
+    }
+
+    func testChoosingCharacters() throws {
+        let match = try XCTUnwrap(Match(players: 2, characters: [.ferro, .fern]))
+        XCTAssertEqual(match.player(0).character, .ferro)
+        XCTAssertEqual(match.player(1).character, .fern)
+        XCTAssertNotNil(Match(players: 3, characters: [.mason]))  // a short list falls back to the defaults
     }
 
     func testSameInputsSameHash() throws {
@@ -78,6 +87,9 @@ final class KeyboardTests: XCTestCase {
         XCTAssertEqual(KeyLayout.arrows.input(held: [123, 126]), PlayerInput(moveX: -100, jump: true))
         XCTAssertEqual(KeyLayout.arrows.input(held: [123, 124]), PlayerInput())
         XCTAssertEqual(KeyLayout.wasd.input(held: [2, 1]), PlayerInput(moveX: 100, down: true))
+        XCTAssertEqual(KeyLayout.wasd.input(held: [12, 14, 15]), PlayerInput(place: true, trick: true, brk: true))
+        XCTAssertEqual(KeyLayout.arrows.input(held: [47]), PlayerInput(place: true))
+        XCTAssertEqual(KeyLayout.ijkl.input(held: [35]), PlayerInput(brk: true))
         XCTAssertEqual(KeyLayout.wasd.input(held: [124]), PlayerInput())
     }
 }
@@ -113,8 +125,10 @@ final class GamepadTests: XCTestCase {
 
     func testButtons() {
         XCTAssertTrue(GamepadMapping.input(GamepadState(south: true)).jump)
-        XCTAssertTrue(GamepadMapping.input(GamepadState(north: true)).jump)
-        XCTAssertFalse(GamepadMapping.input(GamepadState(east: true, west: true)).jump)
+        XCTAssertFalse(GamepadMapping.input(GamepadState(north: true)).jump)
+        XCTAssertEqual(GamepadMapping.input(GamepadState(west: true)), PlayerInput(place: true))  // X
+        XCTAssertEqual(GamepadMapping.input(GamepadState(east: true)), PlayerInput(trick: true))  // B
+        XCTAssertEqual(GamepadMapping.input(GamepadState(north: true)), PlayerInput(brk: true))   // Y
         XCTAssertTrue(GamepadMapping.input(GamepadState(dpadDown: true)).down)
         XCTAssertTrue(GamepadMapping.input(GamepadState(leftY: -0.7)).down)
         XCTAssertFalse(GamepadMapping.input(GamepadState(leftY: -0.5)).down)
@@ -208,6 +222,15 @@ final class FlowTests: XCTestCase {
         XCTAssertEqual(flow.phase, .setup)
     }
 
+    func testPauseButtonPausesAndResumes() {
+        var flow = Flow()
+        flow.handle(.confirm)
+        flow.handle(.pause)
+        XCTAssertEqual(flow.phase, .paused)
+        flow.handle(.pause)
+        XCTAssertEqual(flow.phase, .playing)
+    }
+
     func testResultsRematchOrSetup() {
         var flow = Flow()
         flow.matchOver(winner: 1)  // not playing: ignored
@@ -237,6 +260,7 @@ final class MenuInputTests: XCTestCase {
         XCTAssertEqual(MenuInput.actions(from: idle, to: GamepadState(south: true)), [.confirm])
         XCTAssertEqual(MenuInput.actions(from: GamepadState(south: true), to: GamepadState(south: true)), [])
         XCTAssertEqual(MenuInput.actions(from: idle, to: GamepadState(east: true)), [.back])
+        XCTAssertEqual(MenuInput.actions(from: idle, to: GamepadState(menu: true)), [.pause])
         XCTAssertEqual(MenuInput.actions(from: idle, to: GamepadState(dpadRight: true)), [.right])
         XCTAssertEqual(MenuInput.actions(from: idle, to: GamepadState(leftY: -0.9)), [.down])
         XCTAssertEqual(MenuInput.actions(from: GamepadState(leftY: -0.9), to: GamepadState(leftY: -0.9)), [])

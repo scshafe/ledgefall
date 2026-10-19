@@ -1,6 +1,6 @@
 // The stage: three tiers of crumbling one-way tiles, with lost-footing's
 // stress model (docs/lost-footing-brief.md; its design.md, "Crumble platform").
-#include "ledgefall/match.hpp"
+#include "internal.hpp"
 
 namespace ledgefall {
 namespace {
@@ -43,6 +43,9 @@ void add_row(fp::Stage& stage, int left, int tiles, int top) {
 }  // namespace
 
 bool valid(const Setup& s) noexcept {
+  for (Character c : s.characters) {
+    if (static_cast<int>(c) >= kCharacterCount) return false;
+  }
   return s.players >= kMinPlayers && s.players <= kMaxPlayers && s.stocks >= kMinStocks &&
          s.stocks <= kMaxStocks;
 }
@@ -57,7 +60,7 @@ std::optional<Rules> make_rules(const Setup& setup) {
   add_row(r.engine.stage, -32, 4, 68);
   r.engine.stage.blast = {Fixed::from_int(-130), Fixed::from_int(130), Fixed::from_int(-60),
                           Fixed::from_int(160)};
-  r.engine.params.assign(static_cast<std::size_t>(setup.players), fp::MovementParams{});
+  for (int i = 0; i < setup.players; ++i) r.engine.params.push_back(detail::movement_for(setup.characters[static_cast<std::size_t>(i)]));
   for (int x : {-60, -20, 20, 60}) r.spawns.push_back({Fixed::from_int(x), Fixed::from_int(100)});
   return r;
 }

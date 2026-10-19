@@ -37,7 +37,7 @@ void test_input_bytes() {
   encode(in, b);
   Input out;
   CHECK(decode(b, out) && out == in);
-  const std::uint8_t bad_axis[] = {101, 0}, bad_button[] = {0, 4}, short_bytes[] = {0};
+  const std::uint8_t bad_axis[] = {101, 0}, bad_button[] = {0, 32}, short_bytes[] = {0};
   CHECK(!decode(bad_axis, out) && !decode(bad_button, out) && !decode(short_bytes, out));
   CHECK(out == in);
 }
