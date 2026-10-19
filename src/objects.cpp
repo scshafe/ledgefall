@@ -14,6 +14,20 @@ const Fixed kLobGravity = fx100(14);
 constexpr int kGlueLife = 420, kOilLife = 420, kAcidLife = 150;
 const Fixed kGlueWidth = fx100(2300), kOilWidth = fx100(3500), kAcidWidth = fx100(2600);
 constexpr int kPatchMax = 2, kAcidMax = 1;
+
+// Pip's gust: a fan that blows 340 px ahead for 3 s after a 0.4 s spin-up.
+constexpr int kGustLife = 180, kGustArm = 24;
+const Fixed kGustLen = fx100(10880), kGustHalfHeight = fx100(1920);
+const Fixed kGustForce = fx100(9);      // 0.27 px/tick^2 at the fan, half that at the far end
+const Fixed kGustLobPush = fx100(4);    // and what it does to a lob in flight (0.12 px/tick^2)
+
+// Pip's drill: a hop, then a dive that breaks the tiles it lands on.
+constexpr int kDrillHopTicks = 10;
+const Fixed kDrillHop = fx100(180);     // 8 px/tick up
+const Fixed kDrillDive = fx100(350);    // 16 px/tick down
+const Fixed kDrillBounce = fx100(200);  // 9 px/tick up
+const Fixed kDrillNeighbourStress = fx100(40);
+const Fixed kDrillReach = fx100(4500);  // neighbours within 140 px
 const Fixed kAcidStress = Fixed::from_raw(Fixed::kOneRaw / 40);
 
 bool in_play(fp::PlatformPhase p) {
@@ -126,6 +140,11 @@ void update_objects(const Rules& rules, State& state, fp::Events& scratch) {
     if (o.kind == ObjectKind::Lob) {
       const fp::Vec2 prev = o.pos;
       o.vel.y = o.vel.y - kLobGravity;
+      for (const Object& g : state.objects) {  // gusts push lobs in flight
+        if (g.kind != ObjectKind::Gust || g.arm > 0) continue;
+        const Fixed d = (o.pos.x - g.pos.x) * g.vel.x;
+        if (d >= Fixed::zero() && d <= kGustLen && fp::abs(o.pos.y - g.pos.y) < kGustHalfHeight) o.vel.x = o.vel.x + g.vel.x * kGustLobPush;
+      }
       o.pos = o.pos + o.vel;
       // A wall's side bounces a lob back.
       for (const fp::Placeable& w : state.world.placeables) {
@@ -155,6 +174,9 @@ void update_objects(const Rules& rules, State& state, fp::Events& scratch) {
         }
       }
       if (o.pos.y < blast.bottom || o.pos.x < blast.left || o.pos.x > blast.right) o = {};
+    } else if (o.kind == ObjectKind::Gust) {
+      if (o.arm > 0) --o.arm;
+      if (--o.timer <= 0) o = {};
     } else if (o.kind == ObjectKind::Acid) {
       // Dissolves the tiles under it in under a second.
       each_surface(rules, state, [&](const Surface& s) {
@@ -163,6 +185,103 @@ void update_objects(const Rules& rules, State& state, fp::Events& scratch) {
       });
       if (--o.timer <= 0) o = {};
     }
+  }
+}
+
+}  // namespace ledgefall::detail
+
+namespace ledgefall::detail {
+
+bool cast_gust(const Rules& rules, State& state, int seat) {
+  for (Object& o : state.objects) {  // one at once: the old one goes
+    if (o.kind == ObjectKind::Gust && o.owner == seat) o = {};
+  }
+  Object* o = free_object(state);
+  if (o == nullptr) return false;
+  const fp::EntityState& e = state.world.entities[static_cast<std::size_t>(seat)];
+  const fp::MovementParams& m = rules.engine.params[static_cast<std::size_t>(seat)];
+  *o = Object{ObjectKind::Gust, static_cast<std::int8_t>(seat), Payload::Glue,
+              {e.pos.x, e.pos.y + m.body_height / Fixed::from_int(2)}, {Fixed::from_int(e.facing), Fixed::zero()}, {}, {},
+              static_cast<std::int16_t>(kGustLife), static_cast<std::int16_t>(kGustArm)};
+  return true;
+}
+
+bool cast_drill(State& state, int seat) {
+  PlayerState& p = state.players[static_cast<std::size_t>(seat)];
+  fp::EntityState& e = state.world.entities[static_cast<std::size_t>(seat)];
+  if (e.mode != fp::Mode::Airborne) {
+    fp::start_fall(e);
+    e.vel.y = kDrillHop;
+    p.drill = kDrillHopTicks;
+  } else {
+    p.drill = -1;
+  }
+  return true;
+}
+
+void apply_wind_and_drill(const Rules& rules, State& state, std::vector<fp::Intent>& intents) {
+  for (std::size_t i = 0; i < state.players.size(); ++i) {
+    fp::EntityState& e = state.world.entities[i];
+    PlayerState& p = state.players[i];
+    if (e.eliminated != 0) {
+      p.drill = 0;
+      continue;
+    }
+    const fp::MovementParams& m = rules.engine.params[i];
+
+    // Wind: whoever stands in a spinning gust is pushed along it (its owner too).
+    const Fixed cy = e.pos.y + m.body_height / Fixed::from_int(2);
+    for (const Object& g : state.objects) {
+      if (g.kind != ObjectKind::Gust || g.arm > 0) continue;
+      const Fixed d = (e.pos.x - g.pos.x) * g.vel.x;
+      if (d < Fixed::zero() || d > kGustLen || fp::abs(cy - g.pos.y) > kGustHalfHeight) continue;
+      e.vel.x = e.vel.x + g.vel.x * kGustForce * (Fixed::one() - d / kGustLen / Fixed::from_int(2));
+      blame(state, static_cast<int>(i), g.owner);
+    }
+
+    // The drill: an air jump cancels a dive; otherwise the hop slows, then the dive takes over.
+    if (p.drill == -1 && (intents[i].jump && e.prev_jump == 0) && e.jumps_used < m.aerial_jumps &&
+        e.mode == fp::Mode::Airborne) {
+      p.drill = 0;
+    }
+    if (p.drill > 0) {
+      e.vel.x = e.vel.x * fx100(80);
+      if (--p.drill == 0) p.drill = -1;
+    }
+    if (p.drill == -1) {
+      e.vel.x = Fixed::zero();
+      e.vel.y = Fixed::zero() - kDrillDive;
+      intents[i].move_x = Fixed::zero();
+      intents[i].jump = false;
+      intents[i].fast_fall = false;
+    }
+  }
+}
+
+void drill_landings(const Rules& rules, State& state, const fp::Events& events, fp::Events& scratch) {
+  for (const fp::Event& ev : events) {
+    if (ev.type != fp::EventType::Landed) continue;
+    PlayerState& p = state.players[static_cast<std::size_t>(ev.id)];
+    if (p.drill != -1) continue;
+    p.drill = 0;
+    fp::EntityState& e = state.world.entities[static_cast<std::size_t>(ev.id)];
+    const auto& platforms = rules.engine.stage.platforms;
+    if (ev.other >= 0 && ev.other < static_cast<int>(platforms.size())) {
+      // The tile it landed on breaks; the tiles around it, in the same row, are stressed.
+      stress_tile(rules, state, ev.other, Fixed::one(), ev.id, scratch);
+      for (std::size_t t = 0; t < platforms.size(); ++t) {
+        if (static_cast<int>(t) == ev.other || platforms[t].rect.top != platforms[static_cast<std::size_t>(ev.other)].rect.top) continue;
+        if (!in_play(state.world.platforms[t].phase)) continue;
+        const Fixed mid = (platforms[t].rect.left + platforms[t].rect.right) / Fixed::from_int(2);
+        if (fp::abs(mid - e.pos.x) < kDrillReach) stress_tile(rules, state, static_cast<int>(t), kDrillNeighbourStress, ev.id, scratch);
+      }
+    } else if (ev.other >= static_cast<int>(platforms.size())) {
+      fp::remove_placeable(rules.engine, state.world, ev.other - static_cast<int>(platforms.size()), scratch);  // a wall
+      state.meta[static_cast<std::size_t>(ev.other) - platforms.size()] = {};
+    }
+    fp::start_fall(e);
+    e.vel.y = kDrillBounce;
+    e.jumps_used = 0;
   }
 }
 

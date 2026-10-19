@@ -12,7 +12,7 @@
 namespace ledgefall {
 namespace {
 
-constexpr std::uint8_t kMagic0 = 'L', kMagic1 = 'F', kVersion = 3;
+constexpr std::uint8_t kMagic0 = 'L', kMagic1 = 'F', kVersion = 4;
 constexpr std::size_t kHeaderBytes = 3;
 
 // An integer or an enum, as the unsigned integer of its own width.
@@ -78,6 +78,7 @@ void io_player(A& a, PlayerState& p) {
   for (auto& c : p.cooldown) a.num(c);
   a.num(p.prev_buttons);
   a.num(p.slow);
+  a.num(p.drill);
   a.num(p.blame_by);
   a.num(p.blame_tick);
   a.num(p.ko_tick);
@@ -137,6 +138,7 @@ void io_state(A& a, State& s) {
     a.fx(o.x0);
     a.fx(o.x1);
     a.num(o.timer);
+    a.num(o.arm);
   }
   for (TileBlame& t : s.tile_blame) {
     a.num(t.by);
@@ -151,7 +153,7 @@ bool plausible(const Rules& rules, const State& s) {
     for (auto c : p.cooldown) {
       if (c < 0 || c > 20 * kTicksPerSecond) return false;
     }
-    if ((p.prev_buttons & ~kButtonMask) != 0 || p.slow < 0 || p.slow > 10 * kTicksPerSecond) return false;
+    if ((p.prev_buttons & ~kButtonMask) != 0 || p.slow < 0 || p.slow > 10 * kTicksPerSecond || p.drill < -1 || p.drill > 20) return false;
     if (p.blame_by < -1 || p.blame_by >= n || p.place < 0 || p.place > n) return false;
   }
   if (s.winner < -1 || s.winner >= n) return false;
@@ -168,8 +170,8 @@ bool plausible(const Rules& rules, const State& s) {
     if (p.used && p.owner < 0) return false;
   }
   for (const Object& o : s.objects) {
-    if (static_cast<int>(o.kind) > static_cast<int>(ObjectKind::Acid) || static_cast<int>(o.payload) > static_cast<int>(Payload::Acid)) return false;
-    if (o.owner < -1 || o.owner >= n || o.timer < 0) return false;
+    if (static_cast<int>(o.kind) > static_cast<int>(ObjectKind::Gust) || static_cast<int>(o.payload) > static_cast<int>(Payload::Acid)) return false;
+    if (o.owner < -1 || o.owner >= n || o.timer < 0 || o.arm < 0) return false;
     if (o.kind != ObjectKind::None && o.owner < 0) return false;
   }
   for (const TileBlame& t : s.tile_blame) {

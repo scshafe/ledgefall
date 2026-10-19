@@ -169,6 +169,7 @@ void step(const Rules& rules, State& state, std::span<const Input> inputs) {
 
   std::vector<fp::Intent> intents(n);
   for (std::size_t i = 0; i < n && i < inputs.size(); ++i) intents[i] = to_intent(inputs[i]);
+  detail::apply_wind_and_drill(rules, state, intents);
   std::vector<fp::Vec2> vel_before(n);
   std::vector<std::int16_t> support_before(n);
   for (std::size_t i = 0; i < n; ++i) {
@@ -195,9 +196,12 @@ void step(const Rules& rules, State& state, std::span<const Input> inputs) {
   }
   for (PlayerState& p : state.players) p.slow = static_cast<std::int16_t>(std::max(p.slow - 1, 0));
 
+  detail::drill_landings(rules, state, events, scratch);
   detail::vertical_contacts(rules, state, events, vel_before, scratch);
-  detail::after_step(rules, state, events, support_before, scratch);
+  detail::after_step(rules, state, events, scratch);
   detail::update_objects(rules, state, scratch);
+  detail::credit_crumbles(state, events, support_before);
+  detail::credit_crumbles(state, scratch, support_before);
   overtime(rules, state, events);
 
   // Players eliminated this tick lose a stock; the others' respawn clocks run.

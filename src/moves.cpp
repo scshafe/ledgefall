@@ -141,6 +141,8 @@ bool cast(const Rules& rules, State& state, int seat, int slot, const Input& in,
       break;
     case Character::Pip:
       if (slot == 0) done = cast_spring(rules, state, seat, in, events);
+      else if (slot == 1) done = cast_gust(rules, state, seat);
+      else done = cast_drill(state, seat);
       break;
     case Character::Glim:  // glue, oil and acid, each a lob
       done = throw_lob(state, rules, seat, slot == 0 ? Payload::Glue : slot == 1 ? Payload::Oil : Payload::Acid, in);
@@ -163,21 +165,10 @@ void arm_pending(const Rules& rules, State& state, fp::Events& events) {
   }
 }
 
-void after_step(const Rules& rules, State& state, const fp::Events& events,
-                const std::vector<std::int16_t>& support_before, fp::Events& scratch) {
+void after_step(const Rules& rules, State& state, const fp::Events& events, fp::Events& scratch) {
   for (const fp::Event& e : events) {
     if (e.type == fp::EventType::PlaceableRemoved) {
       state.meta[static_cast<std::size_t>(e.id)] = {};
-    } else if (e.type == fp::EventType::PlatformCrumbled) {
-      // A tile someone stressed: they are credited with it, and with whoever it drops.
-      TileBlame& tb = state.tile_blame[static_cast<std::size_t>(e.id)];
-      if (tb.by >= 0 && static_cast<std::int32_t>(state.world.frame) - tb.tick <= kBlameWindowTicks) {
-        ++state.players[static_cast<std::size_t>(tb.by)].stats.tiles_broken;
-        for (std::size_t i = 0; i < support_before.size(); ++i) {
-          if (support_before[i] == e.id) blame(state, static_cast<int>(i), tb.by);
-        }
-      }
-      tb = {};
     } else if (e.type == fp::EventType::Sprung) {
       PlaceableMeta& m = state.meta[static_cast<std::size_t>(e.other)];
       if (m.owner >= 0) blame(state, e.id, m.owner);
@@ -210,6 +201,21 @@ void after_step(const Rules& rules, State& state, const fp::Events& events,
       fp::remove_placeable(rules.engine, state.world, static_cast<int>(slot), scratch);
       state.meta[slot] = {};
     }
+  }
+}
+
+void credit_crumbles(State& state, const fp::Events& events, const std::vector<std::int16_t>& support_before) {
+  for (const fp::Event& e : events) {
+    if (e.type != fp::EventType::PlatformCrumbled) continue;
+    // A tile someone stressed: they are credited with it, and with whoever it drops.
+    TileBlame& tb = state.tile_blame[static_cast<std::size_t>(e.id)];
+    if (tb.by >= 0 && static_cast<std::int32_t>(state.world.frame) - tb.tick <= kBlameWindowTicks) {
+      ++state.players[static_cast<std::size_t>(tb.by)].stats.tiles_broken;
+      for (std::size_t i = 0; i < support_before.size(); ++i) {
+        if (support_before[i] == e.id) blame(state, static_cast<int>(i), tb.by);
+      }
+    }
+    tb = {};
   }
 }
 

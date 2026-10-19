@@ -71,7 +71,7 @@ difference will be absorbed.
   indirect to a player, within 5 s), stats, and lost-footing's tie-break for
   the placings (`rank`). Vertical contact (`src/contact.cpp`): a fast landing
   on a head is a stomp (bounce, slow, tile stress), a slow one rides.
-  Done: Mason's Wall, Pip's Spring (and its air launch), all of Glim's kit.
+  Done: Mason's Wall, all of Pip's kit (Spring with its air launch, Gust, Drill), all of Glim's kit.
   Lobs and acid puddles are `Object`s in the state (`src/objects.cpp`); glue and
   oil become the engine's sticky and slick patches; tiles remember who last
   stressed them (`tile_blame`), so a tile that drops someone credits its maker.
