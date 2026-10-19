@@ -42,4 +42,15 @@ if(BUILD_TESTING)
   add_executable(ledgefall_core_match_test tests/match_test.cpp)
   target_link_libraries(ledgefall_core_match_test PRIVATE ledgefall::ledgefall_core)
   add_test(NAME ledgefall_core_match COMMAND ledgefall_core_match_test)
+
+  foreach(name scenario determinism_trace)
+    add_executable(ledgefall_core_${name}_test tests/${name}_test.cpp)
+    target_link_libraries(ledgefall_core_${name}_test PRIVATE ledgefall::ledgefall_core)
+    target_compile_definitions(ledgefall_core_${name}_test PRIVATE
+      LEDGEFALL_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/golden")
+    add_test(NAME ledgefall_core_${name} COMMAND ledgefall_core_${name}_test)
+  endforeach()
+
+  add_test(NAME ledgefall_core_determinism_guards
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check-determinism-guards)
 endif()

@@ -8,7 +8,7 @@
 // with and never changes, `State` is plain data that is all the simulation
 // state, and `step(rules, state, inputs)` is a pure fixed-tick function of the
 // state and one input per seat. `hash`, `snapshot` and `restore` cover exactly
-// the State. Nothing here reads a clock, a float or an unordered container.
+// the State. Nothing here depends on time, rounding or container order.
 
 #include <cstdint>
 #include <optional>
