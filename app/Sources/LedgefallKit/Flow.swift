@@ -29,7 +29,7 @@ public enum FlowEffect: Equatable {
     case listReplays // read the saved replays into the list
     case watchReplay(Int) // watch the replay at this index of the list
     case stopWatching     // back to the setup screen
-    case bindingsChanged  // the keys were changed: save them and use them
+    case controlsChanged  // the keys were changed: save them and use them
     case saveLobby(String) // the lobby's address was set (empty: cleared): save it and use it
 }
 
@@ -86,6 +86,10 @@ public struct Flow: Equatable {
     public private(set) var controlsCluster = 0
     public private(set) var controlsRow = 0
     public private(set) var capturing = false
+    /// How far a controller's stick must be pushed sideways before it moves a player, in percent.
+    public private(set) var deadZonePercent = GamepadMapping.defaultDeadZonePercent
+    /// The controls screen's rows: the key actions, then the stick's dead zone, then "standard".
+    public static let deadZoneRow = KeyAction.allCases.count, resetRow = KeyAction.allCases.count + 1
     /// The lobby address that is saved, the text being typed for a new one, and what is wrong with it.
     public private(set) var lobby = ""
     public private(set) var lobbyDraft = ""
@@ -231,15 +235,26 @@ public struct Flow: Equatable {
             let clusters = bindings.layouts.count
             switch action {
             case .up: controlsRow = max(controlsRow - 1, 0)
-            case .down: controlsRow = min(controlsRow + 1, KeyAction.allCases.count)
-            case .left: controlsCluster = (controlsCluster + clusters - 1) % clusters
-            case .right: controlsCluster = (controlsCluster + 1) % clusters
+            case .down: controlsRow = min(controlsRow + 1, Flow.resetRow)
+            case .left, .right:
+                let delta = action == .left ? -1 : 1
+                if controlsRow == Flow.deadZoneRow {
+                    let range = GamepadMapping.deadZonePercents
+                    let next = min(max(deadZonePercent + 5 * delta, range.lowerBound), range.upperBound)
+                    if next != deadZonePercent {
+                        deadZonePercent = next
+                        return .controlsChanged
+                    }
+                } else {
+                    controlsCluster = (controlsCluster + clusters + delta) % clusters
+                }
             case .confirm:
                 if controlsRow < KeyAction.allCases.count {
                     capturing = true
-                } else {
+                } else if controlsRow == Flow.resetRow {
                     bindings.reset()
-                    return .bindingsChanged
+                    deadZonePercent = GamepadMapping.defaultDeadZonePercent
+                    return .controlsChanged
                 }
             case .back: phase = .setup
             case .pause: break
@@ -276,7 +291,7 @@ public struct Flow: Equatable {
         guard capturingKey else { return nil }
         capturing = false
         guard key != 53, let action = KeyAction(rawValue: controlsRow) else { return nil }
-        return bindings.bind(key, to: action, cluster: controlsCluster) ? .bindingsChanged : nil
+        return bindings.bind(key, to: action, cluster: controlsCluster) ? .controlsChanged : nil
     }
 
     /// Typed text, while the lobby address is being entered (characters that cannot be in an address are dropped).
@@ -294,6 +309,11 @@ public struct Flow: Equatable {
 
     /// The lobby address saved earlier.
     public mutating func setLobby(_ text: String) { lobby = text }
+
+    /// The dead zone the player saved earlier (percent; anything outside the range is ignored).
+    public mutating func setDeadZone(percent: Int) {
+        if GamepadMapping.deadZonePercents.contains(percent) { deadZonePercent = percent }
+    }
 
     /// The keys the player saved earlier.
     public mutating func setBindings(_ new: KeyBindings) { bindings = new }

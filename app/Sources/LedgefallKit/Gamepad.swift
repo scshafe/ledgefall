@@ -33,10 +33,14 @@ public struct GamepadState: Equatable {
 /// the quantised axis.
 public enum GamepadMapping {
     public static let deadZone: Float = 0.2
+    /// What the player may choose, in percent of the stick's travel.
+    public static let deadZonePercents = 5...50
+    public static let defaultDeadZonePercent = 20
     /// How far down the stick must be pushed to count as "down".
     public static let downThreshold: Float = 0.65
 
-    public static func input(_ pad: GamepadState) -> PlayerInput {
+    public static func input(_ pad: GamepadState, deadZone: Float = GamepadMapping.deadZone) -> PlayerInput {
+        let deadZone = min(max(deadZone, 0), 0.9)
         var axis: Float
         if pad.dpadLeft != pad.dpadRight {
             axis = pad.dpadRight ? 1 : -1

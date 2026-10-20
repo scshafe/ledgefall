@@ -50,13 +50,18 @@ final class AppModel: ObservableObject {
             flow.setBindings(saved)
             seating = newSeating()
         }
+        if let percent = UserDefaults.standard.object(forKey: AppModel.deadZoneDefault) as? Int {
+            flow.setDeadZone(percent: percent)
+            seating = newSeating()
+        }
         flow.setLobby(AppModel.savedLobby() ?? "")
         publish()
     }
 
     private static let keysDefault = "keys"
+    private static let deadZoneDefault = "deadzone"
 
-    private func newSeating() -> Seating { Seating(layouts: flow.bindings.layouts) }
+    private func newSeating() -> Seating { Seating(layouts: flow.bindings.layouts, deadZone: Float(flow.deadZonePercent) / 100) }
 
     /// What is drawn: the online match while one is on, else the local one.
     var displayMatch: Match { (flow.online ? sessions.first?.match : nil) ?? (flow.phase == .watching ? watch?.match : nil) ?? loop.match }
@@ -117,10 +122,13 @@ final class AppModel: ObservableObject {
         case .saveLobby(let text):
             if text.isEmpty { UserDefaults.standard.removeObject(forKey: "lobby") } else { UserDefaults.standard.set(text, forKey: "lobby") }
             lobbyAddress = AppModel.configuredLobby()
-        case .bindingsChanged:
+        case .controlsChanged:
             UserDefaults.standard.set(flow.bindings.stored, forKey: AppModel.keysDefault)
+            UserDefaults.standard.set(flow.deadZonePercent, forKey: AppModel.deadZoneDefault)
             seating.layouts = flow.bindings.layouts
             onlineSeating.layouts = flow.bindings.layouts
+            seating.deadZone = Float(flow.deadZonePercent) / 100
+            onlineSeating.deadZone = seating.deadZone
         }
         publish()
     }
