@@ -40,3 +40,16 @@ params = { kind = "native", name = "ledgefall", date = "2026-10-19" }
 agent = "agent-ledgefall"
 github = ["contents=write", "pull_requests=write", "issues=write", "workflows=write", "actions=write"]
 docker = true
+
+# DEPLOY-01: how this project reaches production (references, never secrets).
+# The runner lane: a merge to main deploys deploy/stack/ on the PC through the
+# self-hosted runner and the host entrypoint (scshafe/infra
+# docs/platform/agent-deploy.md; infra stacks/ledgefall/host.conf).
+[deploy]
+lane = "runner"
+stack = "ledgefall"
+layout = "app"
+host = "pc"
+tailnet_node = "ledgefall"
+door = "none"
+verify_on = "hosted"
