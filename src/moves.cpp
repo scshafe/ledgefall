@@ -258,4 +258,33 @@ void credit_crumbles(const Rules& rules, State& state, const fp::Events& events,
   }
 }
 
+void apply_modifiers(State& state) {
+  for (std::size_t i = 0; i < state.players.size(); ++i) {
+    fp::EntityState& e = state.world.entities[i];
+    fp::Modifier m;  // none
+    bool any = false;
+    if (state.players[i].slow > 0) {  // stomped: slowed to 0.55 for half a second
+      m.ground_speed = fx100(55);
+      any = true;
+    }
+    if (e.eliminated == 0 && e.mode != fp::Mode::Airborne) {
+      for (std::size_t slot = 0; slot < state.world.placeables.size(); ++slot) {
+        const fp::Placeable& p = state.world.placeables[slot];
+        if (p.active == 0 || p.kind != fp::PlaceableKind::Sticky) continue;
+        if (e.pos.x < p.rect.left || e.pos.x > p.rect.right || e.pos.y < p.rect.bottom || e.pos.y > p.rect.top) continue;
+        any = true;
+        if (state.meta[slot].tag == 1) {  // brambles: speed x0.4 (the patch), accel x0.5, jump x0.8
+          m.ground_accel = m.ground_accel * fx100(50);
+          m.air_accel = m.air_accel * fx100(50);
+          m.jump = m.jump * fx100(80);
+        } else {  // glue: speed x0.1 (the patch), jump x0.55
+          m.jump = m.jump * fx100(55);
+        }
+      }
+    }
+    if (any) m.frames = 1;  // for this step; set again next tick if it still holds
+    e.mod = m;
+  }
+}
+
 }  // namespace ledgefall::detail

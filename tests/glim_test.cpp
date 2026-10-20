@@ -134,6 +134,41 @@ void test_off_the_stage_a_lob_is_lost() {
   CHECK(lobs(s) == 0 && patches(s, fp::PlaceableKind::Sticky) == 0);
 }
 
+// The highest a player gets from a full hop, standing at x on tile `tile`, with or without a patch under their feet.
+Fixed hop_height(const Rules& r, bool patch, bool bramble = false) {
+  State s = on_ground(r);
+  s.world.entities[1] = fp::spawn_on(r.engine, tile_at(Fixed::from_int(-70)), Fixed::from_int(-70));
+  s.world.entities[0].pos.x = Fixed::from_int(80);
+  if (patch) {
+    fp::Placeable p;
+    p.kind = fp::PlaceableKind::Sticky;
+    p.rect = {Fixed::from_int(-90), Fixed::from_int(-50), Fixed::from_int(-1), Fixed::from_int(1)};
+    p.speed_scale = Fixed::from_double(0.1);
+    const int slot = fp::place(s.world, p);
+    s.meta[static_cast<std::size_t>(slot)].owner = 0;
+    s.meta[static_cast<std::size_t>(slot)].tag = bramble ? 1 : 0;
+  }
+  s.players[1].invuln = 0;
+  Fixed top{};
+  for (int t = 0; t < 90; ++t) {
+    firm(s);
+    const Input in[2] = {{}, {0, static_cast<std::uint8_t>(t < 40 ? kButtonJump : 0)}};
+    step(r, s, in);
+    if (s.world.entities[1].pos.y > top) top = s.world.entities[1].pos.y;
+  }
+  return top;
+}
+
+void test_glue_and_brambles_cut_the_jump() {
+  const Rules r = rules();
+  const Fixed free = hop_height(r, false);
+  const Fixed glued = hop_height(r, true);
+  const Fixed thorny = hop_height(r, true, true);
+  CHECK(free > Fixed::from_int(20));
+  CHECK(glued < free * Fixed::from_double(0.5));    // jump x0.55: a 0.3 share of the height
+  CHECK(thorny < free * Fixed::from_double(0.8) && thorny > glued);  // jump x0.8: a 0.64 share
+}
+
 void test_objects_round_trip() {
   const Rules r = rules();
   State s = on_ground(r);
@@ -159,6 +194,7 @@ int main() {
   test_two_at_once_oldest_goes();
   test_acid_eats_tiles_and_credits();
   test_off_the_stage_a_lob_is_lost();
+  test_glue_and_brambles_cut_the_jump();
   test_objects_round_trip();
   return test::finish();
 }
