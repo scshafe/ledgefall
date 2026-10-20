@@ -29,6 +29,32 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
   target_compile_options(ledgefall_core PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 
+# The server: netplay-kit's game server hosting this core (milestone 3). Off for a build that only
+# wants the core and the app. Pinned by commit (docs/decisions/0002-netplay-kit-pin.md).
+option(LEDGEFALL_BUILD_SERVER "Build the netplay-kit adapter and the game server" ON)
+if(LEDGEFALL_BUILD_SERVER)
+  FetchContent_Declare(netplay_kit
+    GIT_REPOSITORY https://github.com/scshafe/netplay-kit.git
+    GIT_TAG 75440f27a86081fde5c800aecd3b0597816c390f
+    EXCLUDE_FROM_ALL)
+  set(NPK_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+  set(NPK_SANITIZE OFF CACHE BOOL "" FORCE)
+  FetchContent_MakeAvailable(netplay_kit)
+
+  add_library(ledgefall_netplay src/netplay.cpp)
+  add_library(ledgefall::ledgefall_netplay ALIAS ledgefall_netplay)
+  target_link_libraries(ledgefall_netplay PUBLIC ledgefall::ledgefall_core npk::netplay_kit)
+  if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(ledgefall_netplay PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  endif()
+
+  add_executable(ledgefall_server server/main.cpp)
+  target_link_libraries(ledgefall_server PRIVATE ledgefall::ledgefall_netplay)
+  if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(ledgefall_server PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  endif()
+endif()
+
 include(CTest)
 if(BUILD_TESTING)
   add_executable(ledgefall_core_smoke_test tests/smoke_test.cpp)
@@ -56,6 +82,12 @@ if(BUILD_TESTING)
   target_link_libraries(ledgefall_core_capi_c_test PRIVATE ledgefall::ledgefall_core)
   target_compile_options(ledgefall_core_capi_c_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
   add_test(NAME ledgefall_core_capi_c COMMAND ledgefall_core_capi_c_test)
+
+  if(LEDGEFALL_BUILD_SERVER)
+    add_executable(ledgefall_netplay_test tests/netplay_test.cpp)
+    target_link_libraries(ledgefall_netplay_test PRIVATE ledgefall::ledgefall_netplay)
+    add_test(NAME ledgefall_netplay COMMAND ledgefall_netplay_test)
+  endif()
 
   add_test(NAME ledgefall_core_determinism_guards
     COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check-determinism-guards)
