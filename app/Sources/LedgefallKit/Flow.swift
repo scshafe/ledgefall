@@ -17,19 +17,44 @@ public enum FlowEffect: Equatable {
     case showDemo    // back to a bot-only match behind the setup screen
 }
 
-/// The screens and their rules: setup (players 2...4, stocks 1...5, default 3),
-/// the match, pause, results. Pure, so it is tested without a window.
+/// How the seats are split into teams (a match needs two sides; teams of one seat each is "off").
+public enum TeamMode: Int, CaseIterable, Equatable {
+    case off, alternating, halves
+
+    public var name: String { ["Free for all", "1 + 3 vs 2 + 4", "1 + 2 vs 3 + 4"][rawValue] }
+
+    /// The team (0 or 1) of each of `players` seats; nil plays alone.
+    public func teams(players: Int) -> [Int?] {
+        switch self {
+        case .off: return Array(repeating: nil, count: players)
+        case .alternating: return (0..<players).map { $0 % 2 }
+        case .halves: return (0..<players).map { $0 < (players + 1) / 2 ? 0 : 1 }
+        }
+    }
+}
+
+/// The screens and their rules: setup (players 2...4, stocks 1...5, default 3, the stage, teams and a
+/// character for each seat), the match, pause, results. Pure, so it is tested without a window.
 public struct Flow: Equatable {
     public static let playersRange = 2...4
     public static let stocksRange = 1...5
-    public static let rows = 3  // players, stocks, start
+
+    // Setup rows: players, stocks, stage, teams, one per seat (the character), start.
+    public static let playersRow = 0, stocksRow = 1, stageRow = 2, teamsRow = 3, firstSeatRow = 4
 
     public private(set) var phase: Phase = .setup
     public private(set) var players = 2
     public private(set) var stocks = 3
-    public private(set) var selectedRow = 2
+    public private(set) var arena: Arena = .yard
+    public private(set) var teamMode: TeamMode = .off
+    public private(set) var fighters: [Fighter] = [.mason, .glim, .pip, .fuse]
+    public private(set) var selectedRow = 6
 
     public init() {}
+
+    /// The number of setup rows; the last is Start.
+    public var rows: Int { Flow.firstSeatRow + players + 1 }
+    public var startRow: Int { rows - 1 }
 
     @discardableResult
     public mutating func handle(_ action: MenuAction) -> FlowEffect? {
@@ -37,11 +62,11 @@ public struct Flow: Equatable {
         case .setup:
             switch action {
             case .up: selectedRow = max(selectedRow - 1, 0)
-            case .down: selectedRow = min(selectedRow + 1, Flow.rows - 1)
+            case .down: selectedRow = min(selectedRow + 1, rows - 1)
             case .left: adjust(-1)
             case .right: adjust(1)
             case .confirm:
-                if selectedRow == Flow.rows - 1 {
+                if selectedRow == startRow {
                     phase = .playing
                     return .startMatch
                 }
@@ -78,9 +103,16 @@ public struct Flow: Equatable {
     }
 
     private mutating func adjust(_ delta: Int) {
+        func wrap(_ i: Int, _ n: Int) -> Int { ((i % n) + n) % n }
         switch selectedRow {
-        case 0: players = min(max(players + delta, Flow.playersRange.lowerBound), Flow.playersRange.upperBound)
-        case 1: stocks = min(max(stocks + delta, Flow.stocksRange.lowerBound), Flow.stocksRange.upperBound)
+        case Flow.playersRow:
+            players = min(max(players + delta, Flow.playersRange.lowerBound), Flow.playersRange.upperBound)
+        case Flow.stocksRow: stocks = min(max(stocks + delta, Flow.stocksRange.lowerBound), Flow.stocksRange.upperBound)
+        case Flow.stageRow: arena = Arena(rawValue: wrap(arena.rawValue + delta, Arena.allCases.count)) ?? arena
+        case Flow.teamsRow: teamMode = TeamMode(rawValue: wrap(teamMode.rawValue + delta, TeamMode.allCases.count)) ?? teamMode
+        case Flow.firstSeatRow..<(Flow.firstSeatRow + players):
+            let seat = selectedRow - Flow.firstSeatRow
+            fighters[seat] = Fighter(rawValue: wrap(fighters[seat].rawValue + delta, Fighter.allCases.count)) ?? fighters[seat]
         default: break
         }
     }
