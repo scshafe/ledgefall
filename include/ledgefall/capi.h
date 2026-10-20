@@ -90,6 +90,7 @@ typedef struct lf_player {
   int32_t character;      /* lf_character */
   int32_t cooldown[3];    /* ticks until each move can be cast again */
   int32_t place;          /* final placing once the match is over, 1 is the winner; 0 before */
+  int32_t team;           /* -1 plays alone, else 0 or 1 */
   int32_t kos;            /* eliminations credited */
   int32_t falls;          /* self-eliminations */
 } lf_player;
@@ -101,6 +102,18 @@ enum lf_stage { LF_STAGE_PRACTICE, LF_STAGE_YARD, LF_STAGE_QUARRY, LF_STAGE_TIDE
 /* The same with the match's random seed, a character (lf_character) for each of the `players` seats
  * (NULL for the defaults), and a stage (lf_stage). */
 lf_match* lf_match_create_with(int players, int stocks, uint32_t seed, const uint8_t* characters, int stage);
+
+/* Everything a lobby chooses. Zero-filled except players and stocks gives the defaults (but teams must be -1). */
+typedef struct lf_setup {
+  int32_t players, stocks;
+  uint32_t seed;
+  int32_t stage;          /* lf_stage */
+  uint8_t characters[4];  /* lf_character per seat */
+  int8_t teams[4];        /* -1 plays alone; 0 and 1 are the two teams (they need two sides, else all play alone) */
+  int8_t seat_stocks[4];  /* a handicap: this many stocks for the seat (1..9), 0 for the match's stocks */
+} lf_setup;
+
+lf_match* lf_match_create_setup(const lf_setup* setup);
 void lf_match_destroy(lf_match* m);
 
 /* Make a seat a bot (LF_BOT_EASY..HARD) or a human again (LF_BOT_NONE). 0 on a bad seat or level. */
@@ -113,6 +126,7 @@ int lf_match_players(const lf_match* m);
 uint32_t lf_match_tick(const lf_match* m);
 int lf_match_over(const lf_match* m);
 int lf_match_winner(const lf_match* m); /* the winning seat, -1 for none or not over */
+int lf_match_winning_team(const lf_match* m); /* the winning team (0 or 1) once over, -1 if nobody or not played in teams */
 uint64_t lf_match_hash(const lf_match* m);
 
 /* 0 for a seat out of range. */

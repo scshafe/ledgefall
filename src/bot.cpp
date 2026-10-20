@@ -59,7 +59,7 @@ bool plan_lob(const Rules& rules, const State& state, int seat, int slot, int to
   const fp::EntityState& me = state.world.entities[static_cast<std::size_t>(seat)];
   for (std::size_t q = 0; q < state.players.size(); ++q) {
     const fp::EntityState& o = state.world.entities[q];
-    if (static_cast<int>(q) == seat || o.eliminated != 0 || state.players[q].invuln > 0 || !grounded(o)) continue;
+    if (same_side(rules, seat, static_cast<int>(q)) || o.eliminated != 0 || state.players[q].invuln > 0 || !grounded(o)) continue;
     for (const int facing : {static_cast<int>(me.facing), -static_cast<int>(me.facing)}) {
       for (int aim = 0; aim < 3; ++aim) {  // neutral, forward (the only one that may turn round), high
         if (facing != me.facing && aim != 1) continue;
@@ -81,12 +81,12 @@ bool plan_lob(const Rules& rules, const State& state, int seat, int slot, int to
 }
 
 // An opponent on my tier, between `lo` and `hi` units away: the direction to face.
-int on_my_tier(const State& state, int seat, int lo, int hi) {
+int on_my_tier(const Rules& rules, const State& state, int seat, int lo, int hi) {
   const fp::EntityState& me = state.world.entities[static_cast<std::size_t>(seat)];
   if (!grounded(me)) return 0;
   for (std::size_t q = 0; q < state.players.size(); ++q) {
     const fp::EntityState& o = state.world.entities[q];
-    if (static_cast<int>(q) == seat || o.eliminated != 0 || state.players[q].invuln > 0 || !grounded(o)) continue;
+    if (same_side(rules, seat, static_cast<int>(q)) || o.eliminated != 0 || state.players[q].invuln > 0 || !grounded(o)) continue;
     if (fp::abs(o.pos.y - me.pos.y) > Fixed::from_int(2)) continue;
     const Fixed dx = o.pos.x - me.pos.x;
     if (fp::abs(dx) >= Fixed::from_int(lo) && fp::abs(dx) <= Fixed::from_int(hi)) return dx > Fixed::zero() ? 1 : -1;
@@ -104,7 +104,7 @@ bool plan_move(const Rules& rules, const State& state, int seat, const Bot& bot,
   auto lob = [&](int slot) { return ready(slot) && plan_lob(rules, state, seat, slot, tol, plan); };
   auto ahead = [&](int slot, int lo, int hi) {
     if (!ready(slot)) return false;
-    const int face = on_my_tier(state, seat, lo, hi);
+    const int face = on_my_tier(rules, state, seat, lo, hi);
     if (face == 0) return false;
     plan = {slot, face, false, false};
     return true;
@@ -114,7 +114,7 @@ bool plan_move(const Rules& rules, const State& state, int seat, const Bot& bot,
     if (!ready(slot)) return false;
     for (std::size_t q = 0; q < state.players.size(); ++q) {
       const fp::EntityState& o = state.world.entities[q];
-      if (static_cast<int>(q) == seat || o.eliminated != 0 || state.players[q].invuln > 0 || !grounded(o)) continue;
+      if (same_side(rules, seat, static_cast<int>(q)) || o.eliminated != 0 || state.players[q].invuln > 0 || !grounded(o)) continue;
       const Fixed dx = o.pos.x - me.pos.x, dy = me.pos.y - o.pos.y;
       if (dy < Fixed::from_int(-6) || fp::abs(dx) > Fixed::from_int(83) || fp::abs(dx) < Fixed::from_int(10)) continue;
       plan = {slot, dx > Fixed::zero() ? 1 : -1, fp::abs(dx) > Fixed::from_int(38), false};
@@ -133,7 +133,7 @@ bool plan_move(const Rules& rules, const State& state, int seat, const Bot& bot,
       if (!ready(2)) return false;
       for (std::size_t q = 0; q < state.players.size(); ++q) {  // drill: someone straight below
         const fp::EntityState& o = state.world.entities[q];
-        if (static_cast<int>(q) == seat || o.eliminated != 0 || state.players[q].invuln > 0) continue;
+        if (same_side(rules, seat, static_cast<int>(q)) || o.eliminated != 0 || state.players[q].invuln > 0) continue;
         const Fixed below = me.pos.y - o.pos.y;
         if (fp::abs(o.pos.x - me.pos.x) < Fixed::from_int(8) && below > Fixed::from_int(8) && below < Fixed::from_int(120)) {
           plan = {2, 0, false, false};
@@ -148,7 +148,7 @@ bool plan_move(const Rules& rules, const State& state, int seat, const Bot& bot,
       if (!ready(0)) return false;         // bumper in front of someone in the air
       for (std::size_t q = 0; q < state.players.size(); ++q) {
         const fp::EntityState& o = state.world.entities[q];
-        if (static_cast<int>(q) == seat || o.eliminated != 0 || state.players[q].invuln > 0 || grounded(o)) continue;
+        if (same_side(rules, seat, static_cast<int>(q)) || o.eliminated != 0 || state.players[q].invuln > 0 || grounded(o)) continue;
         const Fixed dx = o.pos.x - me.pos.x, dy = o.pos.y - me.pos.y;
         if (fp::abs(dx) > Fixed::from_int(13) && fp::abs(dx) < Fixed::from_int(35) && dy > Fixed::from_int(-6) && dy < Fixed::from_int(30)) {
           plan = {0, dx > Fixed::zero() ? 1 : -1, false, false};
@@ -186,7 +186,7 @@ bool plan_move(const Rules& rules, const State& state, int seat, const Bot& bot,
           if (!holds) continue;
           for (std::size_t q = 0; q < state.players.size(); ++q) {
             const fp::EntityState& o = state.world.entities[q];
-            if (static_cast<int>(q) == seat || o.eliminated != 0) continue;
+            if (same_side(rules, seat, static_cast<int>(q)) || o.eliminated != 0) continue;
             const Fixed dx = o.pos.x - m.pos.x, dy = o.pos.y - m.pos.y;
             if (dx * dx + dy * dy < Fixed::from_int(100 * 100)) {
               plan = {1, 0, false, false};
