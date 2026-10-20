@@ -13,13 +13,14 @@ struct OverlayView: View {
 
     var body: some View {
         ZStack {
-            if ![.setup, .browsing, .connecting, .replays, .controls].contains(model.flow.phase) { stocksBar }
+            if ![.setup, .browsing, .connecting, .replays, .controls, .lobby].contains(model.flow.phase) { stocksBar }
             switch model.flow.phase {
             case .setup: setupPanel
             case .browsing: browsingPanel
             case .connecting: connectingPanel
             case .replays: replaysPanel
             case .controls: controlsPanel
+            case .lobby: lobbyPanel
             case .watching: watchingBar
             case .playing: EmptyView()
             case .paused: panel(title: "Paused", lines: ["Return / A: resume", "Esc / B: quit to setup"])
@@ -77,9 +78,9 @@ struct OverlayView: View {
                 row("Seat \(seat + 1)", value: flow.fighters[seat].name, selected: flow.selectedRow == Flow.firstSeatRow + seat)
                     .foregroundColor(seatColor(seat))
             }
-            row(flow.mode == .join ? "Find a room" : flow.mode == .host ? "Open the room" : flow.mode == .controls ? "Change the keys" : "Start", value: nil, selected: flow.selectedRow == flow.startRow)
+            row(flow.mode == .join ? "Find a room" : flow.mode == .host ? "Open the room" : flow.mode == .controls ? "Change the keys" : flow.mode == .lobby ? "Set the lobby address" : "Start", value: nil, selected: flow.selectedRow == flow.startRow)
             if flow.mode != .local {
-                Text("Lobby: \(model.lobbyAddress ?? "not set (LEDGEFALL_LOBBY, or defaults write ledgefall lobby <address>)")")
+                Text("Lobby: \(model.lobbyAddress ?? "not set (Mode: Set the lobby address)")")
                     .font(.footnote).foregroundColor(.secondary)
             }
             Text("Arrows or d-pad to choose, Return or A to confirm.\nIn a match: WASD, arrows or IJKL (jump on the top key; Q E R, . / right shift, or U O P are the three moves; the Mode row can change them), or a controller (A jump, X, B, Y the moves), to take a seat from the bots. Esc or the menu button pauses.")
@@ -146,6 +147,24 @@ struct OverlayView: View {
             .font(.title3)
             .foregroundColor(flow.controlsRow == KeyAction.allCases.count ? .yellow : .white)
             Text("Left and right switch cluster, Return picks a key to change, then press the new one (Esc cancels). A key another action had goes to the one you took it from. Esc goes back.")
+                .font(.footnote).foregroundColor(.secondary)
+        }
+        .padding(28)
+        .background(Color.black.opacity(0.7))
+        .cornerRadius(12)
+        .foregroundColor(.white)
+    }
+
+    private var lobbyPanel: some View {
+        let flow = model.flow
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("Lobby address").font(.system(size: 34, weight: .bold))
+            Text(flow.lobbyDraft + "▏").font(.system(.title2, design: .monospaced))
+            if !flow.lobbyError.isEmpty { Text(flow.lobbyError).foregroundColor(.orange) }
+            if model.lobbyFromEnvironment {
+                Text("LEDGEFALL_LOBBY is set and wins over the saved address.").foregroundColor(.orange)
+            }
+            Text("Type or paste (Cmd-V) the address of the lobby: host, host:port or https://host. Return saves it, Delete erases, Esc leaves it as it was. An empty address clears it.")
                 .font(.footnote).foregroundColor(.secondary)
         }
         .padding(28)

@@ -15,8 +15,11 @@ final class AppModel: ObservableObject {
     @Published private(set) var localSeats: Set<Int> = []
     /// Watching a replay: ticks played and in all.
     @Published private(set) var watchTicks: (played: Int, total: Int)?
-    /// The lobby's address, from the LEDGEFALL_LOBBY environment variable or `defaults write <app> lobby <url>`.
-    let lobbyAddress: String? = AppModel.configuredLobby()
+    /// The lobby's address: the LEDGEFALL_LOBBY environment variable if it is set, else the one saved from the setup screen
+    /// (the `lobby` preference, which `defaults write ledgefall lobby <url>` also sets).
+    @Published private(set) var lobbyAddress: String? = AppModel.configuredLobby()
+    /// Whether LEDGEFALL_LOBBY is set, and so wins over the saved address.
+    let lobbyFromEnvironment = AppModel.environmentLobby() != nil
 
     private(set) var loop: GameLoop
     /// The online match, once the game server has been found; its view is what is drawn while the match is on.
@@ -47,6 +50,7 @@ final class AppModel: ObservableObject {
             flow.setBindings(saved)
             seating = newSeating()
         }
+        flow.setLobby(AppModel.savedLobby() ?? "")
         publish()
     }
 
@@ -57,17 +61,19 @@ final class AppModel: ObservableObject {
     /// What is drawn: the online match while one is on, else the local one.
     var displayMatch: Match { (flow.online ? sessions.first?.match : nil) ?? (flow.phase == .watching ? watch?.match : nil) ?? loop.match }
 
-    private static func configuredLobby() -> String? {
-        let text = ProcessInfo.processInfo.environment["LEDGEFALL_LOBBY"] ?? UserDefaults.standard.string(forKey: "lobby")
-        guard let text, !text.isEmpty else { return nil }
-        return text
+    private static func environmentLobby() -> String? {
+        ProcessInfo.processInfo.environment["LEDGEFALL_LOBBY"].flatMap { $0.isEmpty ? nil : $0 }
     }
+
+    private static func savedLobby() -> String? { UserDefaults.standard.string(forKey: "lobby").flatMap { $0.isEmpty ? nil : $0 } }
+
+    private static func configuredLobby() -> String? { environmentLobby() ?? savedLobby() }
 
     private func lobbyClient() throws -> LobbyClient {
         guard let address = lobbyAddress else {
-            throw LobbyError("No lobby address. Set LEDGEFALL_LOBBY, or: defaults write ledgefall lobby <address>")
+            throw LobbyError("No lobby address. Set it under Mode: Set the lobby address")
         }
-        guard let url = URL(string: address.contains("://") ? address : "https://\(address)") else { throw LobbyError("The lobby address is not valid") }
+        guard let url = LobbyAddress.url(address) else { throw LobbyError("The lobby address is not valid") }
         return LobbyClient(base: url)
     }
 
@@ -108,6 +114,9 @@ final class AppModel: ObservableObject {
         case .leaveOnline:
             dropOnline()
             loop = GameLoop(match: AppModel.demoMatch())
+        case .saveLobby(let text):
+            if text.isEmpty { UserDefaults.standard.removeObject(forKey: "lobby") } else { UserDefaults.standard.set(text, forKey: "lobby") }
+            lobbyAddress = AppModel.configuredLobby()
         case .bindingsChanged:
             UserDefaults.standard.set(flow.bindings.stored, forKey: AppModel.keysDefault)
             seating.layouts = flow.bindings.layouts
@@ -116,8 +125,18 @@ final class AppModel: ObservableObject {
         publish()
     }
 
+    /// Text typed (or pasted) while the lobby address is being entered.
+    func typed(_ text: String) {
+        flow.type(text)
+    }
+
+    func backspace() {
+        flow.backspace()
+    }
+
     /// A key press from the window. Game keys are read from `heldKeys`; menus use presses.
     func keyPressed(_ code: UInt16) {
+        if flow.phase == .lobby && code == 49 { return }  // a space is not part of an address, and is not "confirm" here
         if flow.capturingKey {  // the controls screen is waiting for a key
             if let effect = flow.capture(key: code) { perform(effect) }
             return
@@ -340,7 +359,7 @@ final class AppModel: ObservableObject {
                     flow.onlineFailed("Disconnected from the game server")
                 }
             }
-        case .setup, .controls:
+        case .setup, .controls, .lobby:
             if loop.match.isOver { loop = GameLoop(match: AppModel.demoMatch()) }
             loop.advance(to: now) { [] }  // the demo match plays itself
         case .playing:
