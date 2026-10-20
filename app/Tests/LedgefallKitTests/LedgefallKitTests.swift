@@ -78,6 +78,26 @@ final class MatchTests: XCTestCase {
         XCTAssertNil(Match(players: 3, seatStocks: [10, 0, 0]))
     }
 
+    func testReplayReproducesTheMatch() throws {
+        let match = try XCTUnwrap(Match(players: 2, stocks: 1, seed: 3))
+        for seat in 0..<2 { match.setBot(seat: seat, level: .hard) }
+        var ticks = 0
+        while !match.isOver && ticks < 6 * 60 * 60 {
+            match.step([])
+            ticks += 1
+        }
+        XCTAssertTrue(match.isOver)
+        let data = try XCTUnwrap(match.replayData())
+        let replay = try XCTUnwrap(Replay(data: data))
+        XCTAssertTrue(replay.isGenuine)
+        XCTAssertEqual(replay.ticks, match.tick)
+        let watch = try XCTUnwrap(replay.makeMatch())
+        for t in 0..<replay.ticks { watch.step(replay.inputs(at: t)) }
+        XCTAssertEqual(watch.hash, match.hash)
+        XCTAssertEqual(replay.inputs(at: replay.ticks), [])
+        XCTAssertNil(Replay(data: Data([1, 2, 3])))
+    }
+
     func testSameInputsSameHash() throws {
         func run() throws -> UInt64 {
             let match = try XCTUnwrap(Match(players: 2))

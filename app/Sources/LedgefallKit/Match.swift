@@ -1,4 +1,5 @@
 import CLedgefall
+import Foundation
 
 /// One tick of one seat's input.
 public struct PlayerInput: Equatable {
@@ -99,8 +100,8 @@ public final class Match {
     /// Nil unless `players` is 2...4 and `stocks` is 1...5 (and the rest is in range).
     /// `teams` gives each seat a team (0 or 1; nil plays alone; a match needs two sides, else all play alone),
     /// `seatStocks` a handicap (1...9 stocks for the seat instead of `stocks`; 0 for none).
-    public init?(players: Int, stocks: Int = 3, seed: UInt32 = 1, characters: [Fighter]? = nil,
-                 arena: Arena = .practice, teams: [Int?]? = nil, seatStocks: [Int]? = nil) {
+    public convenience init?(players: Int, stocks: Int = 3, seed: UInt32 = 1, characters: [Fighter]? = nil,
+                             arena: Arena = .practice, teams: [Int?]? = nil, seatStocks: [Int]? = nil) {
         var setup = lf_setup()
         setup.players = Int32(players)
         setup.stocks = Int32(stocks)
@@ -123,9 +124,14 @@ public final class Match {
         setup.characters = (fighters[0], fighters[1], fighters[2], fighters[3])
         setup.teams = (teamValues[0], teamValues[1], teamValues[2], teamValues[3])
         setup.seat_stocks = (handicaps[0], handicaps[1], handicaps[2], handicaps[3])
+        self.init(setup: setup)
+    }
+
+    init?(setup: lf_setup) {
+        var setup = setup
         guard let h = lf_match_create_setup(&setup) else { return nil }
         self.handle = h
-        self.players = players
+        self.players = Int(setup.players)
     }
 
     deinit { lf_match_destroy(handle) }
@@ -150,6 +156,14 @@ public final class Match {
             return lf_input(move_x: input.moveX, buttons: buttons)
         }
         lf_match_step(handle, &raw)
+    }
+
+    /// The match so far as a replay: its setup and every seat's input on every tick (bots' included).
+    public func replayData() -> Data? {
+        let size = lf_match_replay_size(handle)
+        var bytes = [UInt8](repeating: 0, count: size)
+        guard size > 0, lf_match_replay_write(handle, &bytes, size) == size else { return nil }
+        return Data(bytes)
     }
 
     public var tick: Int { Int(lf_match_tick(handle)) }
@@ -233,5 +247,46 @@ public final class Match {
         lf_match_blast(handle, &b)
         let one = Match.fixedOne
         return (Float(b[0]) / one, Float(b[1]) / one, Float(b[2]) / one, Float(b[3]) / one)
+    }
+}
+
+/// A recorded match to watch again: make a match from it and step that with `inputs(at:)` tick by tick.
+public final class Replay {
+    private let handle: OpaquePointer
+    public let players: Int
+    public let ticks: Int
+
+    /// Nil if the bytes are not a well-formed replay.
+    public init?(data: Data) {
+        let bytes = [UInt8](data)
+        guard let h = lf_replay_open(bytes, bytes.count) else { return nil }
+        handle = h
+        var setup = lf_setup()
+        lf_replay_setup(h, &setup)
+        players = Int(setup.players)
+        ticks = Int(lf_replay_ticks(h))
+    }
+
+    deinit { lf_replay_close(handle) }
+
+    /// Whether running it from the start ends with the hash it was recorded with.
+    public var isGenuine: Bool { lf_replay_verify(handle) != 0 }
+
+    /// A fresh match set up as the recording began, with no bots: step it with `inputs(at:)`.
+    public func makeMatch() -> Match? {
+        var setup = lf_setup()
+        lf_replay_setup(handle, &setup)
+        return Match(setup: setup)
+    }
+
+    /// Every seat's input on `tick`; empty past the end.
+    public func inputs(at tick: Int) -> [PlayerInput] {
+        var raw = [lf_input](repeating: lf_input(), count: 4)
+        guard tick >= 0, lf_replay_inputs(handle, UInt32(tick), &raw) != 0 else { return [] }
+        return raw.prefix(players).map { r in
+            PlayerInput(moveX: r.move_x, jump: r.buttons & UInt8(LF_BUTTON_JUMP) != 0, down: r.buttons & UInt8(LF_BUTTON_DOWN) != 0,
+                        place: r.buttons & UInt8(LF_BUTTON_PLACE) != 0, trick: r.buttons & UInt8(LF_BUTTON_TRICK) != 0,
+                        brk: r.buttons & UInt8(LF_BUTTON_BREAK) != 0)
+        }
     }
 }
