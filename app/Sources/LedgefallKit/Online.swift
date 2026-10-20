@@ -1,10 +1,9 @@
 import CLedgefall
 import Foundation
 
-/// What an online room is for: the same setup on the server and on every client. The lobby does not show a
-/// room's options to its players yet (a netplay-kit gap), so until it does the setup also travels in the room's
-/// name, which every client can read: "lf1 S1 K3 D123456 C0123 T0101" (stage, stocks, seed, a character digit
-/// per seat, a team per seat: 0, 1 or n for none). The server gets the same thing as the room's options.
+/// What an online room is for: the same setup on the server and on every client. It is the room's options
+/// (netplay-kit's lobby keeps them with the room and shows them to everyone who lists it or joins): stage,
+/// stocks, seed, a character per seat, a team per seat (-1 for none).
 public struct OnlineSetup: Equatable {
     public var arena: Arena
     public var stocks: Int
@@ -22,34 +21,19 @@ public struct OnlineSetup: Equatable {
         self.teams = teams.count == fighters.count ? teams : Array(repeating: nil, count: fighters.count)
     }
 
-    public var roomName: String {
-        let c = fighters.map { String($0.rawValue) }.joined()
-        let t = teams.map { $0.map(String.init) ?? "n" }.joined()
-        return "lf1 S\(arena.rawValue) K\(stocks) D\(seed) C\(c) T\(t)"
-    }
+    /// A name for the room in the lobby's list (its limit is 40 characters).
+    public var roomTitle: String { String("\(arena.name), \(stocks) stocks".prefix(40)) }
 
-    /// Nil unless `name` is a name `roomName` produces, with everything in range.
-    public init?(roomName name: String) {
-        let parts = name.split(separator: " ").map(String.init)
-        guard parts.count == 6, parts[0] == "lf1",
-              let stage = parts[1].dropFirst().first.flatMap({ parts[1].hasPrefix("S") ? Int(String($0)) : nil }),
-              parts[1].count == 2, let arena = Arena(rawValue: stage),
-              parts[2].hasPrefix("K"), let stocks = Int(parts[2].dropFirst()), (1...5).contains(stocks),
-              parts[3].hasPrefix("D"), let seed = UInt32(parts[3].dropFirst()),
-              parts[4].hasPrefix("C"), parts[5].hasPrefix("T") else { return nil }
-        let fighters = parts[4].dropFirst().map { Int(String($0)).flatMap(Fighter.init(rawValue:)) }
-        let teams = parts[5].dropFirst().map { ch -> Int?? in
-            switch ch {
-            case "n": return .some(nil)
-            case "0": return .some(0)
-            case "1": return .some(1)
-            default: return nil
-            }
-        }
-        guard (2...4).contains(fighters.count), fighters.allSatisfy({ $0 != nil }),
-              teams.count == fighters.count, teams.allSatisfy({ $0 != nil }) else { return nil }
-        self.init(arena: arena, stocks: stocks, seed: seed, fighters: fighters.compactMap { $0 },
-                  teams: teams.map { $0 ?? nil })
+    /// Nil unless `options` are a ledgefall room's options, with everything in range.
+    public init?(options o: [String: Any]) {
+        guard let stage = o["stage"] as? Int, let arena = Arena(rawValue: stage),
+              let stocks = o["stocks"] as? Int, Flow.stocksRange.contains(stocks),
+              let seed = o["seed"] as? Int, (0...Int(UInt32.max)).contains(seed),
+              let characters = o["characters"] as? [Int], Flow.playersRange.contains(characters.count),
+              let teamCodes = o["teams"] as? [Int], teamCodes.count == characters.count else { return nil }
+        let fighters = characters.compactMap(Fighter.init(rawValue:))
+        guard fighters.count == characters.count, teamCodes.allSatisfy({ (-1...1).contains($0) }) else { return nil }
+        self.init(arena: arena, stocks: stocks, seed: UInt32(seed), fighters: fighters, teams: teamCodes.map { $0 < 0 ? nil : $0 })
     }
 
     /// The room's options for the game server (what `make_netplay_simulation` reads).
@@ -115,8 +99,8 @@ public struct LobbyRoom: Equatable {
     public var state: String  // "open", "starting", "playing", "finished"
     public var seatCount: Int
     public var taken: Int
-    /// The setup the name carries; nil for a room that is not a ledgefall room.
-    public var setup: OnlineSetup? { OnlineSetup(roomName: name) }
+    /// The setup in the room's options; nil for a room that is not a ledgefall room.
+    public var setup: OnlineSetup? = nil
 }
 
 public struct LobbyMe: Equatable {
@@ -158,7 +142,8 @@ public final class LobbyClient {
 
     private static func room(_ o: [String: Any]) -> LobbyRoom? {
         guard let id = o["id"] as? String, let name = o["name"] as? String, let state = o["state"] as? String else { return nil }
-        return LobbyRoom(id: id, name: name, state: state, seatCount: o["seat_count"] as? Int ?? 0, taken: o["taken"] as? Int ?? 0)
+        return LobbyRoom(id: id, name: name, state: state, seatCount: o["seat_count"] as? Int ?? 0, taken: o["taken"] as? Int ?? 0,
+                         setup: (o["options"] as? [String: Any]).flatMap(OnlineSetup.init(options:)))
     }
 
     /// How many game servers are registered (a room cannot start with none).
@@ -179,7 +164,7 @@ public final class LobbyClient {
 
     /// Make a room for `setup` (one seat per fighter); returns its id.
     public func createRoom(_ setup: OnlineSetup) async throws -> String {
-        let body: [String: Any] = ["name": setup.roomName, "game": "ledgefall", "seats": setup.players, "options": setup.options]
+        let body: [String: Any] = ["name": setup.roomTitle, "game": "ledgefall", "seats": setup.players, "options": setup.options]
         guard let id = try await call("POST", "/api/rooms", body: body, expecting: [201])["id"] as? String else {
             throw LobbyError("no room id")
         }

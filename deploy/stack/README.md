@@ -62,8 +62,8 @@ host's allowances are infra's `stacks/ledgefall/host.conf`.
 
 - The game server's control API listens in the sidecar's namespace, where under userspace Tailscale a
   tailnet peer can reach it as it can reach every listening port; the shared secret is what protects it.
-- Players' clients need the room's options (stage, characters, seed...) to build the same game as the
-  server; the lobby does not show them to players yet, which is a netplay-kit gap (see the PR).
+- A room's options (stage, characters, seed...) are public to anyone who can list rooms: they are what
+  lets every client build the same game as the server. Nothing secret goes in them.
 - Plain HTTP inside the namespace; `tailscale serve` terminates TLS for players.
 
 ## Checking it

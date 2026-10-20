@@ -36,7 +36,7 @@ option(LEDGEFALL_BUILD_NETCLIENT "Build the online client library (for the app)"
 if(LEDGEFALL_BUILD_SERVER OR LEDGEFALL_BUILD_NETCLIENT)
   FetchContent_Declare(netplay_kit
     GIT_REPOSITORY https://github.com/scshafe/netplay-kit.git
-    GIT_TAG 75440f27a86081fde5c800aecd3b0597816c390f
+    GIT_TAG cd5f99acb8c227ee90a9a4c2d31709de78c0b7ab
     EXCLUDE_FROM_ALL)
   set(NPK_BUILD_TESTS OFF CACHE BOOL "" FORCE)
   set(NPK_SANITIZE OFF CACHE BOOL "" FORCE)
