@@ -182,6 +182,13 @@ the app do not.
 - The deployable stack is under `deploy/stack/` (README: what the host has),
   deployed to the PC by the runner lane (`dev.toml [deploy]`). One image, built by the root `Dockerfile`, holds the lobby and the
   server; both run in the Tailscale sidecar's network namespace.
+- The client end (`include/ledgefall/online.hpp`, `src/online.cpp`, `src/capi_net.cpp`):
+  `OnlineMatch` is netplay-kit's `ClientSession` running the core, and the C face
+  (`lf_net_*`) wraps it over a UDP socket for the app, with a read-only `lf_match`
+  view of the match as the client has it. The app links `ledgefall_netclient`: only
+  netplay-kit's transport and session sources, compiled at the app's macOS floor
+  (the rest of netplay-kit needs macOS 26 for `std::from_chars`), and the app
+  talks to the lobby with `URLSession`.
 - A snapshot is under 16 KiB; netplay-kit's reliable message holds 64 KiB.
 - The simulated-network test (a server and two or four clients on a lossy
   link) converges to the state a straight replay of the canonical inputs gives.

@@ -29,10 +29,11 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
   target_compile_options(ledgefall_core PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 
-# The server: netplay-kit's game server hosting this core (milestone 3). Off for a build that only
-# wants the core and the app. Pinned by commit (docs/decisions/0002-netplay-kit-pin.md).
+# netplay-kit, pinned by commit (docs/decisions/0002-netplay-kit-pin.md). Its targets are EXCLUDE_FROM_ALL;
+# what we build of it is below.
 option(LEDGEFALL_BUILD_SERVER "Build the netplay-kit adapter and the game server" ON)
-if(LEDGEFALL_BUILD_SERVER)
+option(LEDGEFALL_BUILD_NETCLIENT "Build the online client library (for the app)" ON)
+if(LEDGEFALL_BUILD_SERVER OR LEDGEFALL_BUILD_NETCLIENT)
   FetchContent_Declare(netplay_kit
     GIT_REPOSITORY https://github.com/scshafe/netplay-kit.git
     GIT_TAG 75440f27a86081fde5c800aecd3b0597816c390f
@@ -40,8 +41,27 @@ if(LEDGEFALL_BUILD_SERVER)
   set(NPK_BUILD_TESTS OFF CACHE BOOL "" FORCE)
   set(NPK_SANITIZE OFF CACHE BOOL "" FORCE)
   FetchContent_MakeAvailable(netplay_kit)
+endif()
 
-  add_library(ledgefall_netplay src/netplay.cpp)
+if(LEDGEFALL_BUILD_NETCLIENT)
+  # The app's side: only netplay-kit's transport and sessions, compiled here at the app's macOS floor. Its
+  # JSON, HTTP and lobby code (which uses std::from_chars for doubles, unavailable below macOS 26) is not
+  # in it: the app talks to the lobby with URLSession. The sources are found by directory, so a bump of the
+  # pin needs no edit here unless netplay-kit moves them.
+  file(GLOB NPK_CLIENT_SOURCES CONFIGURE_DEPENDS
+    ${netplay_kit_SOURCE_DIR}/src/session/*.cpp
+    ${netplay_kit_SOURCE_DIR}/src/transport/*.cpp
+    ${netplay_kit_SOURCE_DIR}/src/util/*.cpp
+    ${netplay_kit_SOURCE_DIR}/src/version.cpp)
+  add_library(ledgefall_netclient STATIC ${NPK_CLIENT_SOURCES} src/netplay.cpp src/online.cpp src/capi_net.cpp)
+  add_library(ledgefall::ledgefall_netclient ALIAS ledgefall_netclient)
+  target_include_directories(ledgefall_netclient PUBLIC ${netplay_kit_SOURCE_DIR}/include)
+  target_include_directories(ledgefall_netclient PRIVATE ${netplay_kit_SOURCE_DIR}/src)
+  target_link_libraries(ledgefall_netclient PUBLIC ledgefall::ledgefall_core)
+endif()
+
+if(LEDGEFALL_BUILD_SERVER)
+  add_library(ledgefall_netplay src/netplay.cpp src/netplay_options.cpp)
   add_library(ledgefall::ledgefall_netplay ALIAS ledgefall_netplay)
   target_link_libraries(ledgefall_netplay PUBLIC ledgefall::ledgefall_core npk::netplay_kit)
   if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
@@ -90,6 +110,12 @@ if(BUILD_TESTING)
   target_link_libraries(ledgefall_core_capi_c_test PRIVATE ledgefall::ledgefall_core)
   target_compile_options(ledgefall_core_capi_c_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
   add_test(NAME ledgefall_core_capi_c COMMAND ledgefall_core_capi_c_test)
+
+  if(LEDGEFALL_BUILD_NETCLIENT)
+    add_executable(ledgefall_online_test tests/online_test.cpp)
+    target_link_libraries(ledgefall_online_test PRIVATE ledgefall::ledgefall_netclient)
+    add_test(NAME ledgefall_online COMMAND ledgefall_online_test)
+  endif()
 
   if(LEDGEFALL_BUILD_SERVER)
     add_executable(ledgefall_netplay_test tests/netplay_test.cpp)

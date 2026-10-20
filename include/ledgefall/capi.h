@@ -175,6 +175,33 @@ uint64_t lf_replay_final_hash(const lf_replay* r);
 /* Runs it from the start and says whether it ends with the recorded hash. */
 int lf_replay_verify(const lf_replay* r);
 
+/* An online match: the client end of a netplay-kit game server (include/ledgefall/online.hpp). Open it with
+ * the room's setup (the same one the server was given), the server's "host:port" and, for a server that hosts
+ * many matches, the room id and the 32-hex-digit token the lobby issued (both NULL for a single-match server).
+ * Call lf_net_update every frame; read the match through lf_net_view with the usual lf_match_* views. */
+typedef struct lf_net lf_net;
+
+enum lf_net_state { LF_NET_CONNECTING, LF_NET_WAITING, LF_NET_RUNNING, LF_NET_ENDED, LF_NET_FAILED };
+
+typedef struct lf_net_stats {
+  int32_t input_delay;  /* frames of input delay in use */
+  int32_t seat;         /* this client's seat once the match has started, else -1 */
+  uint32_t rollbacks;   /* rollbacks so far */
+  uint32_t frames_simulated;
+} lf_net_stats;
+
+/* NULL if the setup is invalid, the address cannot be resolved or a socket cannot be opened. */
+lf_net* lf_net_open(const lf_setup* setup, const char* server, const char* room, const char* token_hex);
+void lf_net_close(lf_net* n);
+/* The local player's input right now (clamped to what the core accepts). */
+void lf_net_set_input(lf_net* n, lf_input input);
+/* Pumps the socket and the session; returns an lf_net_state. */
+int lf_net_update(lf_net* n);
+void lf_net_stats_get(const lf_net* n, lf_net_stats* out);
+/* A read-only view of the match as this client has it (predicted); valid until lf_net_close, never to be
+ * destroyed or stepped by the caller. */
+const lf_match* lf_net_view(const lf_net* n);
+
 /* The blast zone: left, right, bottom, top. */
 void lf_match_blast(const lf_match* m, int32_t out[4]);
 

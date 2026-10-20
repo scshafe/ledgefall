@@ -1,5 +1,6 @@
 module CLedgefall [system] {
     header "../../../include/ledgefall/capi.h"
+    link "ledgefall_netclient"
     link "ledgefall_core"
     link "fighter_physics"
     link "c++"
