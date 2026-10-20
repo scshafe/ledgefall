@@ -142,7 +142,8 @@ void test_bots_jump_comets() {
     Arena a(yard_for(Character::Mason));
     clear_halos(a.rules, a.state);
     a.state.world.entities[0] = fp::spawn_on(a.rules.engine, 0, a.rules.engine.stage.platforms[0].rect.left + Fixed::from_int(10));
-    a.bot.wait = 100000;  // no footing changes: stand and watch
+    a.bot.wait = 30000;  // an int16: no new decisions, so no footing changes: stand and watch
+    a.bot.target = 0;
     HazardItem c;
     c.kind = HazardKind::Comet;
     c.dir = 1;
@@ -172,7 +173,8 @@ void test_bots_leave_a_rocks_column() {
   clear_halos(a.rules, a.state);
   const std::size_t slab = 28;  // the great ledge
   a.state.world.entities[0] = fp::spawn_on(a.rules.engine, static_cast<int>(slab), Fixed::zero());
-  a.bot.wait = 100000;
+  a.bot.wait = 30000;  // an int16: no new decisions for the test
+  a.bot.target = static_cast<std::int16_t>(slab);
   HazardItem warn;
   warn.kind = HazardKind::RockWarn;
   warn.pos = {Fixed::zero(), a.rules.engine.stage.blast.top};
@@ -203,6 +205,49 @@ void test_bots_keep_above_the_tide() {
   CHECK(a.state.world.entities[0].pos.y > tide->high);  // it climbed out of the water
 }
 
+// With a gale blowing a bot on the downwind side leans into it; with none, it stays put.
+void test_bots_lean_into_the_gale() {
+  Setup su = yard_for(Character::Mason);
+  su.stage = StageId::Gale;
+  Arena a(su);
+  clear_halos(a.rules, a.state);
+  const auto& platforms = a.rules.engine.stage.platforms;
+  std::size_t far = 0;
+  for (std::size_t i = 0; i < platforms.size(); ++i) {
+    if (platforms[i].rect.right > platforms[far].rect.right) far = i;
+  }
+  a.state.world.entities[0] = fp::spawn_on(a.rules.engine, static_cast<int>(far), (platforms[far].rect.left + platforms[far].rect.right) / Fixed::from_int(2));
+  a.bot.wait = 30000;  // an int16: no new decisions for the test
+  a.bot.target = static_cast<std::int16_t>(far);  // content to stay where it is
+  a.state.hazards.timers.fill(10000);
+  CHECK(bot_input(a.rules, a.state, 0, a.bot).move_x == 0);  // no gale: no reason to move
+  a.state.hazards.gale = GalePhase::Blow;
+  a.state.hazards.gale_dir = 1;
+  a.state.hazards.gale_timer = 100;
+  CHECK(bot_input(a.rules, a.state, 0, a.bot).move_x < 0);  // blowing right: lean left
+  a.state.hazards.gale_dir = -1;
+  CHECK(bot_input(a.rules, a.state, 0, a.bot).move_x >= 0);  // it blows away from this side: nothing to resist
+}
+
+// On a belt that runs off the end of its row, a bot at the end walks against it instead of going with it.
+void test_bots_hold_against_a_belt() {
+  Setup su = yard_for(Character::Mason);
+  su.stage = StageId::Belts;
+  Arena a(su);
+  clear_halos(a.rules, a.state);
+  const std::size_t end = 6;  // the right end of the first row, whose belt runs right
+  CHECK(a.rules.belts[end] > Fixed::zero());
+  const fp::Rect& r = a.rules.engine.stage.platforms[end].rect;
+  a.state.world.entities[0] = fp::spawn_on(a.rules.engine, static_cast<int>(end), r.right - Fixed::from_int(4));
+  a.state.hazards.timers.fill(10000);
+  a.bot.wait = 30000;  // an int16: no new decisions for the test
+  a.bot.target = 7;  // a tile on the far side of the stage: it wants to go right
+  CHECK(bot_input(a.rules, a.state, 0, a.bot).move_x < 0);
+  // A bot that misses hazards (blind) just goes where it was heading.
+  a.bot.blind = true;
+  CHECK(bot_input(a.rules, a.state, 0, a.bot).move_x > 0);
+}
+
 // Easy bots miss hazards sometimes; hard ones never do.
 void test_miss_rates() {
   CHECK(hazard_miss_percent(BotLevel::Easy) == 45 && hazard_miss_percent(BotLevel::Normal) == 15 && hazard_miss_percent(BotLevel::Hard) == 0);
@@ -224,6 +269,8 @@ int main() {
   test_bots_jump_comets();
   test_bots_leave_a_rocks_column();
   test_bots_keep_above_the_tide();
+  test_bots_lean_into_the_gale();
+  test_bots_hold_against_a_belt();
   test_miss_rates();
   test_bot_matches_are_reproducible();
   return test::finish();
