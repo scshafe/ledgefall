@@ -79,6 +79,24 @@ public struct LobbyError: Error, Equatable, CustomStringConvertible {
     public init(_ description: String) { self.description = description }
 }
 
+/// The lobby's address as a person types it: "host", "host:port" or a full URL. https unless it says otherwise.
+public enum LobbyAddress {
+    public static let maxLength = 200
+
+    /// The URL for `text`; nil if it is not an address a lobby could have.
+    public static func url(_ text: String) -> URL? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= maxLength else { return nil }
+        guard let url = URL(string: trimmed.contains("://") ? trimmed : "https://\(trimmed)"),
+              let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
+              let host = url.host, !host.isEmpty else { return nil }
+        return url
+    }
+
+    /// Whether a typed character can be part of an address (no spaces, no control or non-ASCII characters).
+    public static func accepts(_ c: Character) -> Bool { c.isASCII && c.asciiValue.map { $0 > 0x20 && $0 < 0x7F } == true }
+}
+
 /// How the lobby client reaches the network: URLSession in the app, a script in tests.
 public protocol HTTPTransport {
     func send(_ request: URLRequest) async throws -> (data: Data, status: Int)

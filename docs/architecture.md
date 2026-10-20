@@ -172,7 +172,7 @@ and draws its read-only match view with the same renderer. Several people can pl
 setup's *On this Mac* row): each takes a seat of her own and has a session of her own with the game
 server, and the keyboard clusters and controllers are given out in the order they are first used, as in
 a local match. The pause key leaves. At the results, Return plays again: whoever hosted opens a new room with the
-same setup (a new seed) and the others wait for it to appear in the list, then sit down. The lobby's address is `LEDGEFALL_LOBBY` or `defaults write ledgefall lobby <url>`.
+same setup (a new seed) and the others wait for it to appear in the list, then sit down. The lobby's address is typed on the setup screen (the Mode row's last choice: type or paste with Cmd-V, Return saves it as the `lobby` preference, an empty address clears it; `LedgefallKit`'s `LobbyAddress` accepts `host`, `host:port` or a URL, https unless it says http). `LEDGEFALL_LOBBY`, when set, wins over the saved address, and the screen says so; `defaults write ledgefall lobby <url>` still works.
 
 Replays: every finished match is saved (`ReplayLibrary`, `~/Library/Application Support/Ledgefall/Replays/`);
 the setup screen's fourth Mode lists them (newest first, with stage, stocks, characters and length) and

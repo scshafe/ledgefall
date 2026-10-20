@@ -14,6 +14,7 @@ public enum Phase: Equatable {
     case replays     // choosing a saved replay
     case watching    // watching one
     case controls    // changing the keys
+    case lobby       // typing the lobby's address
 }
 
 /// What the host must do after a menu action.
@@ -29,14 +30,16 @@ public enum FlowEffect: Equatable {
     case watchReplay(Int) // watch the replay at this index of the list
     case stopWatching     // back to the setup screen
     case bindingsChanged  // the keys were changed: save them and use them
+    case saveLobby(String) // the lobby's address was set (empty: cleared): save it and use it
 }
 
 /// Where a match is played.
 public enum PlayMode: Int, CaseIterable, Equatable {
-    case local, host, join, replay, controls
+    case local, host, join, replay, controls, lobby
 
     public var name: String {
-        ["Local, against bots and friends", "Online: host a room", "Online: join a room", "Watch a saved replay", "Change the keys"][rawValue]
+        ["Local, against bots and friends", "Online: host a room", "Online: join a room", "Watch a saved replay", "Change the keys",
+         "Set the lobby address"][rawValue]
     }
 }
 
@@ -83,6 +86,10 @@ public struct Flow: Equatable {
     public private(set) var controlsCluster = 0
     public private(set) var controlsRow = 0
     public private(set) var capturing = false
+    /// The lobby address that is saved, the text being typed for a new one, and what is wrong with it.
+    public private(set) var lobby = ""
+    public private(set) var lobbyDraft = ""
+    public private(set) var lobbyError = ""
     public private(set) var players = 2
     /// Online: how many people play from this Mac, each in a seat of their own (1...4, never more than the room's seats).
     public private(set) var localPlayers = 1
@@ -132,6 +139,11 @@ public struct Flow: Equatable {
                         phase = .controls
                         controlsRow = 0
                         capturing = false
+                        return nil
+                    case .lobby:
+                        phase = .lobby
+                        lobbyDraft = lobby
+                        lobbyError = ""
                         return nil
                     }
                 }
@@ -232,6 +244,20 @@ public struct Flow: Equatable {
             case .back: phase = .setup
             case .pause: break
             }
+        case .lobby:
+            switch action {
+            case .confirm:
+                let text = lobbyDraft
+                guard text.isEmpty || LobbyAddress.url(text) != nil else {
+                    lobbyError = "That is not an address (try host:port, or https://host)"
+                    break
+                }
+                lobby = text
+                phase = .setup
+                return .saveLobby(text)
+            case .back: phase = .setup
+            default: break
+            }
         case .connecting:
             if action == .back || (action == .confirm && failed) {
                 leaveOnline()
@@ -252,6 +278,22 @@ public struct Flow: Equatable {
         guard key != 53, let action = KeyAction(rawValue: controlsRow) else { return nil }
         return bindings.bind(key, to: action, cluster: controlsCluster) ? .bindingsChanged : nil
     }
+
+    /// Typed text, while the lobby address is being entered (characters that cannot be in an address are dropped).
+    public mutating func type(_ text: String) {
+        guard phase == .lobby else { return }
+        for c in text where LobbyAddress.accepts(c) && lobbyDraft.count < LobbyAddress.maxLength { lobbyDraft.append(c) }
+        lobbyError = ""
+    }
+
+    public mutating func backspace() {
+        guard phase == .lobby, !lobbyDraft.isEmpty else { return }
+        lobbyDraft.removeLast()
+        lobbyError = ""
+    }
+
+    /// The lobby address saved earlier.
+    public mutating func setLobby(_ text: String) { lobby = text }
 
     /// The keys the player saved earlier.
     public mutating func setBindings(_ new: KeyBindings) { bindings = new }

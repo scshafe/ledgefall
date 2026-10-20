@@ -830,3 +830,74 @@ extension FlowTests {
         XCTAssertEqual(flow.bindings.layouts[0].jump, 49)
     }
 }
+
+final class LobbyAddressTests: XCTestCase {
+    func testAddressesAsTyped() {
+        XCTAssertEqual(LobbyAddress.url("ledgefall.example:8443")?.absoluteString, "https://ledgefall.example:8443")
+        XCTAssertEqual(LobbyAddress.url("  ledgefall.example \n")?.host, "ledgefall.example")
+        XCTAssertEqual(LobbyAddress.url("http://127.0.0.1:8080")?.absoluteString, "http://127.0.0.1:8080")
+        XCTAssertEqual(LobbyAddress.url("HTTPS://Lobby.example")?.scheme?.lowercased(), "https")
+        XCTAssertNil(LobbyAddress.url(""))
+        XCTAssertNil(LobbyAddress.url("https://"))
+        XCTAssertNil(LobbyAddress.url("ftp://lobby.example"))
+        XCTAssertNil(LobbyAddress.url(String(repeating: "a", count: LobbyAddress.maxLength + 1)))
+    }
+
+    func testWhichCharactersAreTyped() {
+        for c in "abcXYZ019:/.-_~?=&%@[]" { XCTAssertTrue(LobbyAddress.accepts(c), "\(c)") }
+        for c in [" ", "\r", "\t", "\u{1B}", "é", "\u{F700}", "\u{7F}"] as [Character] { XCTAssertFalse(LobbyAddress.accepts(c), "\(c.unicodeScalars.first!.value)") }
+    }
+}
+
+extension FlowTests {
+    private func openLobbyScreen(_ flow: inout Flow) {
+        go(&flow, to: Flow.modeRow)
+        for _ in 0..<5 { flow.handle(.right) }
+        XCTAssertEqual(flow.mode, .lobby)
+        go(&flow, to: flow.startRow)
+        XCTAssertNil(flow.handle(.confirm))
+        XCTAssertEqual(flow.phase, .lobby)
+    }
+
+    func testTypingTheLobbyAddress() {
+        var flow = Flow()
+        flow.type("ignored")  // not on that screen
+        XCTAssertEqual(flow.lobbyDraft, "")
+        openLobbyScreen(&flow)
+        flow.type("ledgefall.exampl \r")  // the space and the return are dropped
+        flow.type("e:8443")
+        XCTAssertEqual(flow.lobbyDraft, "ledgefall.example:8443")
+        flow.backspace()
+        flow.type("3")
+        XCTAssertEqual(flow.handle(.confirm), .saveLobby("ledgefall.example:8443"))
+        XCTAssertEqual(flow.phase, .setup)
+        XCTAssertEqual(flow.lobby, "ledgefall.example:8443")
+    }
+
+    func testABadAddressStaysAndEscKeepsTheOldOne() {
+        var flow = Flow()
+        flow.setLobby("old.example")
+        openLobbyScreen(&flow)
+        XCTAssertEqual(flow.lobbyDraft, "old.example")  // starts from the saved one
+        for _ in 0..<flow.lobbyDraft.count { flow.backspace() }
+        flow.backspace()  // nothing left: harmless
+        flow.type("https://")
+        XCTAssertNil(flow.handle(.confirm))
+        XCTAssertEqual(flow.phase, .lobby)
+        XCTAssertFalse(flow.lobbyError.isEmpty)
+        flow.type("x")  // editing clears the complaint
+        XCTAssertEqual(flow.lobbyError, "")
+        XCTAssertNil(flow.handle(.back))
+        XCTAssertEqual(flow.phase, .setup)
+        XCTAssertEqual(flow.lobby, "old.example")
+    }
+
+    func testAnEmptyAddressClearsIt() {
+        var flow = Flow()
+        flow.setLobby("x.example")
+        openLobbyScreen(&flow)
+        for _ in 0..<9 { flow.backspace() }
+        XCTAssertEqual(flow.handle(.confirm), .saveLobby(""))
+        XCTAssertEqual(flow.lobby, "")
+    }
+}

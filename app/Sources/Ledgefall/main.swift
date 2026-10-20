@@ -11,6 +11,15 @@ final class GameView: MTKView {
 
     override func keyDown(with event: NSEvent) {
         guard let model else { return }
+        if model.flow.phase == .lobby {  // the lobby address is being typed
+            if event.keyCode == 51 {
+                model.backspace()
+            } else if event.modifierFlags.contains(.command) {
+                if event.charactersIgnoringModifiers == "v", let text = NSPasteboard.general.string(forType: .string) { model.typed(text) }
+            } else if let text = event.characters {
+                model.typed(text)
+            }
+        }
         model.heldKeys.insert(event.keyCode)
         if !event.isARepeat { model.keyPressed(event.keyCode) }
     }
