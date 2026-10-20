@@ -4,6 +4,7 @@
 // inputs gives.
 #include <cstdio>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "check.hpp"
@@ -226,7 +227,9 @@ void test_clients_converge_on_a_bad_link_with_four_players() {
 
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
+  // `--probe`: exit 0 if the pinned engine can restore a world with a doomed tile (scripts/e2e asks).
+  if (argc > 1 && std::string(argv[1]) == "--probe") return engine_can_restore_doomed_tiles() ? 0 : 1;
   test_options();
   test_the_simulation_contract();
   test_a_finished_match_reports_itself();
