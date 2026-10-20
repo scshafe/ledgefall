@@ -255,7 +255,7 @@ final class FlowTests: XCTestCase {
         for _ in 0..<5 { flow.handle(.right) }
         XCTAssertEqual(flow.players, 4)
         XCTAssertEqual(flow.rows, Flow.firstSeatRow + 4 + 1)
-        XCTAssertEqual(flow.startRow, 9)
+        XCTAssertEqual(flow.startRow, 10)
         for _ in 0..<5 { flow.handle(.left) }
         XCTAssertEqual(flow.players, 2)
         go(&flow, to: Flow.stocksRow)
@@ -288,6 +288,26 @@ final class FlowTests: XCTestCase {
         XCTAssertEqual(flow.fighters[1], .ferro)  // wraps
         go(&flow, to: Flow.firstSeatRow + 1)
         XCTAssertEqual(flow.fighters[0], .mason)  // the other seats are untouched
+    }
+
+    func testPeopleOnThisMac() {
+        var flow = Flow()
+        XCTAssertEqual(flow.localPlayers, 1)
+        go(&flow, to: Flow.localRow)
+        flow.handle(.right)
+        XCTAssertEqual(flow.localPlayers, 2)
+        flow.handle(.right)  // no more than the room has seats
+        XCTAssertEqual(flow.localPlayers, 2)
+        go(&flow, to: Flow.playersRow)
+        flow.handle(.right)
+        flow.handle(.right)
+        go(&flow, to: Flow.localRow)
+        for _ in 0..<5 { flow.handle(.right) }
+        XCTAssertEqual(flow.localPlayers, 4)
+        go(&flow, to: Flow.playersRow)
+        for _ in 0..<5 { flow.handle(.left) }  // fewer seats: fewer people here
+        XCTAssertEqual(flow.players, 2)
+        XCTAssertEqual(flow.localPlayers, 2)
     }
 
     func testOnlineHostingFlow() {
