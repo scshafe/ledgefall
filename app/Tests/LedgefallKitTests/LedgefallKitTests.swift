@@ -790,7 +790,7 @@ extension FlowTests {
         flow.handle(.down)  // jump
         XCTAssertNil(flow.handle(.confirm))
         XCTAssertTrue(flow.capturingKey)
-        XCTAssertEqual(flow.capture(key: 49), .bindingsChanged)
+        XCTAssertEqual(flow.capture(key: 49), .controlsChanged)
         XCTAssertFalse(flow.capturingKey)
         XCTAssertEqual(flow.bindings.layouts[0].jump, 49)
 
@@ -813,9 +813,9 @@ extension FlowTests {
         XCTAssertEqual(flow.phase, .controls)
 
         // The last row puts the standard keys back.
-        for _ in 0..<KeyAction.allCases.count { flow.handle(.down) }
-        XCTAssertEqual(flow.controlsRow, KeyAction.allCases.count)
-        XCTAssertEqual(flow.handle(.confirm), .bindingsChanged)
+        for _ in 0..<(Flow.resetRow - flow.controlsRow) { flow.handle(.down) }
+        XCTAssertEqual(flow.controlsRow, Flow.resetRow)
+        XCTAssertEqual(flow.handle(.confirm), .controlsChanged)
         XCTAssertEqual(flow.bindings, .standard)
 
         XCTAssertNil(flow.handle(.back))
@@ -899,5 +899,62 @@ extension FlowTests {
         for _ in 0..<9 { flow.backspace() }
         XCTAssertEqual(flow.handle(.confirm), .saveLobby(""))
         XCTAssertEqual(flow.lobby, "")
+    }
+}
+
+final class DeadZoneTests: XCTestCase {
+    func testTheDeadZoneIsChosen() {
+        let wide = 0.4 as Float
+        XCTAssertEqual(GamepadMapping.input(GamepadState(leftX: 0.3), deadZone: wide).moveX, 0)
+        XCTAssertEqual(GamepadMapping.input(GamepadState(leftX: 0.3), deadZone: 0.05).moveX, 26)  // (0.3 - 0.05) / 0.95
+        XCTAssertEqual(GamepadMapping.input(GamepadState(leftX: -1), deadZone: wide).moveX, -100)
+        XCTAssertEqual(GamepadMapping.input(GamepadState(leftX: 0.5), deadZone: wide).moveX, 17)
+        XCTAssertEqual(GamepadMapping.input(GamepadState(leftX: 0.5), deadZone: 5).moveX, 0)  // nonsense is clamped, not crashed on
+        XCTAssertEqual(GamepadMapping.input(GamepadState(leftX: 0.19)).moveX, 0)  // the default is unchanged
+    }
+
+    func testSeatingUsesIt() {
+        var seating = Seating(deadZone: 0.5)
+        _ = seating.update(DeviceFrame(pads: [1: GamepadState(south: true)]))
+        let update = seating.update(DeviceFrame(pads: [1: GamepadState(leftX: 0.4)]))
+        XCTAssertEqual(update.inputs[0].moveX, 0)
+        seating.deadZone = 0.1
+        XCTAssertGreaterThan(seating.update(DeviceFrame(pads: [1: GamepadState(leftX: 0.4)])).inputs[0].moveX, 0)
+    }
+}
+
+extension FlowTests {
+    func testChangingTheDeadZone() {
+        var flow = Flow()
+        go(&flow, to: Flow.modeRow)
+        for _ in 0..<4 { flow.handle(.right) }
+        go(&flow, to: flow.startRow)
+        flow.handle(.confirm)
+        XCTAssertEqual(flow.phase, .controls)
+        XCTAssertEqual(flow.deadZonePercent, 20)
+        for _ in 0..<Flow.deadZoneRow { flow.handle(.down) }
+        XCTAssertEqual(flow.handle(.right), .controlsChanged)
+        XCTAssertEqual(flow.deadZonePercent, 25)
+        XCTAssertEqual(flow.controlsCluster, 0)  // left and right changed the dead zone here, not the cluster
+        XCTAssertNil(flow.handle(.confirm))      // nothing to pick on this row
+        XCTAssertFalse(flow.capturingKey)
+        for _ in 0..<10 { flow.handle(.right) }
+        XCTAssertEqual(flow.deadZonePercent, 50)
+        XCTAssertNil(flow.handle(.right))         // at the end: nothing changed
+        for _ in 0..<12 { flow.handle(.left) }
+        XCTAssertEqual(flow.deadZonePercent, 5)
+        XCTAssertNil(flow.handle(.left))
+        flow.handle(.down)
+        XCTAssertEqual(flow.handle(.confirm), .controlsChanged)  // the reset row
+        XCTAssertEqual(flow.deadZonePercent, 20)
+    }
+
+    func testSavedDeadZones() {
+        var flow = Flow()
+        flow.setDeadZone(percent: 35)
+        XCTAssertEqual(flow.deadZonePercent, 35)
+        flow.setDeadZone(percent: 0)    // out of range: ignored
+        flow.setDeadZone(percent: 99)
+        XCTAssertEqual(flow.deadZonePercent, 35)
     }
 }

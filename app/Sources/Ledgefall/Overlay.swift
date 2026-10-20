@@ -141,12 +141,19 @@ struct OverlayView: View {
                 .foregroundColor(selected ? .yellow : .white)
             }
             HStack {
-                Text(flow.controlsRow == KeyAction.allCases.count ? "▸" : " ")
-                Text("Back to the standard keys")
+                Text(flow.controlsRow == Flow.deadZoneRow ? "▸" : " ")
+                Text("Stick dead zone")
+                Text("◂ \(flow.deadZonePercent)% ▸")
             }
             .font(.title3)
-            .foregroundColor(flow.controlsRow == KeyAction.allCases.count ? .yellow : .white)
-            Text("Left and right switch cluster, Return picks a key to change, then press the new one (Esc cancels). A key another action had goes to the one you took it from. Esc goes back.")
+            .foregroundColor(flow.controlsRow == Flow.deadZoneRow ? .yellow : .white)
+            HStack {
+                Text(flow.controlsRow == Flow.resetRow ? "▸" : " ")
+                Text("Back to the standard keys and dead zone")
+            }
+            .font(.title3)
+            .foregroundColor(flow.controlsRow == Flow.resetRow ? .yellow : .white)
+            Text("Left and right switch cluster (or change the dead zone: how far a stick must move before it counts, for drifting sticks), Return picks a key to change, then press the new one (Esc cancels). A key another action had goes to the one you took it from. Esc goes back.")
                 .font(.footnote).foregroundColor(.secondary)
         }
         .padding(28)

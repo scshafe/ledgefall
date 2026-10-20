@@ -193,7 +193,12 @@ gets the key the other gave up, so nothing is ever bound twice (`KeyBindings`). 
 `keys` preference (21 key codes; a damaged or incomplete value falls back to the standard keys). The game view also
 reports modifier keys, which send no key down or up, only a change of flags (right shift is the arrows' Break).
 
-Not built yet: dead-zone settings, per-seat device menus, sound,
+The controls screen also sets the sticks' dead zone (5 to 50 percent of the travel, default 20, in steps of 5; the
+`deadzone` preference): a stick inside it sends nothing, outside it the rest of the travel is rescaled to the full
+range, so a drifting stick can be quieted without losing the top end. It applies to every controller, local and online
+(`Seating.deadZone`); the d-pad and the menu thresholds are not affected.
+
+Not built yet: per-seat device menus, sound,
 character art, interpolation between ticks. Bots are the footing bot only (see
 `include/ledgefall/bot.hpp`).
 

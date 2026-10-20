@@ -26,8 +26,13 @@ public struct Seating {
     public private(set) var capacity = Seating.seatCount
     /// The keys of each cluster (the player may have changed them).
     public var layouts: [KeyLayout]
+    /// How far a stick must be pushed sideways before it moves a player (0...1).
+    public var deadZone: Float
 
-    public init(layouts: [KeyLayout] = KeyLayout.clusters) { self.layouts = layouts }
+    public init(layouts: [KeyLayout] = KeyLayout.clusters, deadZone: Float = GamepadMapping.deadZone) {
+        self.layouts = layouts
+        self.deadZone = deadZone
+    }
 
     /// Seat only the first `n` seats. A device in a seat that goes is released
     /// and joins again the next time it is used.
@@ -73,7 +78,7 @@ public struct Seating {
         let inputs = devices.map { device -> PlayerInput in
             switch device {
             case .keyboard(let cluster)?: return layouts[cluster].input(held: frame.keys)
-            case .controller(let id)?: return frame.pads[id].map(GamepadMapping.input) ?? PlayerInput()
+            case .controller(let id)?: return frame.pads[id].map { GamepadMapping.input($0, deadZone: deadZone) } ?? PlayerInput()
             case nil: return PlayerInput()
             }
         }
