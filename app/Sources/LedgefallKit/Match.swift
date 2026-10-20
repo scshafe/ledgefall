@@ -46,6 +46,8 @@ public struct PlatformView {
     public var hp: Int
     /// A tile's stress, 0...1.
     public var stress: Float
+    /// Its conveyor speed right now (units a tick, + right); 0 for none.
+    public var belt: Float
 }
 
 public enum ThingKind: Int {
@@ -71,9 +73,9 @@ public enum Fighter: Int, CaseIterable {
 
 /// The stages, in the core's order.
 public enum Arena: Int, CaseIterable {
-    case practice, yard, quarry, tide, gale, swell
+    case practice, yard, quarry, tide, gale, swell, belts
 
-    public var name: String { ["Practice", "Crumble Yard", "The Quarry", "Tide Pools", "Gale Bridge", "Sinking Ship"][rawValue] }
+    public var name: String { ["Practice", "Crumble Yard", "The Quarry", "Tide Pools", "Gale Bridge", "Sinking Ship", "Conveyor Sky"][rawValue] }
 }
 
 public struct PlayerView {
@@ -210,7 +212,8 @@ public final class Match {
             left: Float(p.left) / Match.fixedOne, right: Float(p.right) / Match.fixedOne,
             bottom: Float(p.bottom) / Match.fixedOne, top: Float(p.top) / Match.fixedOne,
             phase: PlatformPhase(rawValue: p.phase) ?? .destroyed, timer: Int(p.timer),
-            sturdy: p.sturdy != 0, hp: Int(p.hp), stress: Float(p.stress) / Match.fixedOne)
+            sturdy: p.sturdy != 0, hp: Int(p.hp), stress: Float(p.stress) / Match.fixedOne,
+            belt: Float(p.belt) / Match.fixedOne)
     }
 
     /// The tide and the gale.
@@ -221,13 +224,17 @@ public final class Match {
         /// 0 none, 1 warning, 2 blowing
         public var galePhase: Int
         public var galeDir: Int
+        /// The conveyors have stopped for their warning.
+        public var beltsStopped: Bool
+        public var beltsSign: Int
     }
 
     public var weather: Weather {
         var w = lf_weather()
         lf_match_weather(handle, &w)
         return Weather(tidePhase: Int(w.tide_phase), tideLevel: Float(w.tide_level) / Match.fixedOne,
-                       galePhase: Int(w.gale_phase), galeDir: Int(w.gale_dir))
+                       galePhase: Int(w.gale_phase), galeDir: Int(w.gale_dir),
+                       beltsStopped: w.belts_phase != 0, beltsSign: Int(w.belts_sign))
     }
 
     public var thingCount: Int { Int(lf_match_thing_count(handle)) }

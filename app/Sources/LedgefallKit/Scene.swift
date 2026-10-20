@@ -24,6 +24,7 @@ public enum Scene {
     static let shakingTile = SIMD4<Float>(0.85, 0.42, 0.25, 1)
     static let doomedTile = SIMD4<Float>(0.85, 0.20, 0.15, 1)
     static let slab = SIMD4<Float>(0.55, 0.60, 0.68, 1)
+    static let beltTile = SIMD4<Float>(0.45, 0.60, 0.85, 1)  // a running conveyor
 
     static func mix(_ a: SIMD4<Float>, _ b: SIMD4<Float>, _ t: Float) -> SIMD4<Float> {
         a + (b - a) * min(max(t, 0), 1)
@@ -82,7 +83,8 @@ public enum Scene {
             case .solid:
                 let base = p.sturdy ? slab : tile
                 out.append(Quad(left: p.left, bottom: p.bottom, right: p.right, top: p.top,
-                                color: p.sturdy ? base * (0.55 + 0.45 * Float(p.hp) / 4) + SIMD4(0, 0, 0, 0.45) : mix(base, shakingTile, p.stress)))
+                                color: p.sturdy ? base * (0.55 + 0.45 * Float(p.hp) / 4) + SIMD4(0, 0, 0, 0.45)
+                                    : mix(p.belt != 0 ? mix(base, beltTile, 0.5) : base, shakingTile, p.stress)))
             case .doomed:
                 out.append(Quad(left: p.left, bottom: p.bottom, right: p.right, top: p.top, color: doomedTile))
             case .shaking:

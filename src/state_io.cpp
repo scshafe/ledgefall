@@ -12,7 +12,7 @@
 namespace ledgefall {
 namespace {
 
-constexpr std::uint8_t kMagic0 = 'L', kMagic1 = 'F', kVersion = 11;
+constexpr std::uint8_t kMagic0 = 'L', kMagic1 = 'F', kVersion = 12;
 constexpr std::size_t kHeaderBytes = 3;
 
 // An integer or an enum, as the unsigned integer of its own width.
@@ -173,6 +173,9 @@ void io_state(A& a, State& s) {
   a.num(s.hazards.gale);
   a.num(s.hazards.gale_dir);
   a.num(s.hazards.gale_timer);
+  a.num(s.hazards.belts);
+  a.num(s.hazards.belts_sign);
+  a.num(s.hazards.belts_timer);
 }
 
 bool plausible(const Rules& rules, const State& s) {
@@ -222,6 +225,7 @@ bool plausible(const Rules& rules, const State& s) {
     }
   }
   if (static_cast<int>(s.hazards.tide) > static_cast<int>(TidePhase::Fall) || static_cast<int>(s.hazards.gale) > static_cast<int>(GalePhase::Blow)) return false;
+  if (static_cast<int>(s.hazards.belts) > static_cast<int>(BeltPhase::Stop) || (s.hazards.belts_sign != 1 && s.hazards.belts_sign != -1) || s.hazards.belts_timer < 0) return false;
   if (s.hazards.tide_timer < 0 || s.hazards.gale_timer < 0 || s.hazards.gale_dir < -1 || s.hazards.gale_dir > 1) return false;
   for (auto t : s.hazards.timers) {
     if (t < 0) return false;

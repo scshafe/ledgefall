@@ -73,7 +73,9 @@ difference will be absorbed.
   on a head is a stomp (bounce, slow, tile stress), a slow one rides.
   Stages are data (`src/stage.cpp`): lost-footing's layouts (0.32 units a pixel
   across, 0.26 up so one jump still reaches the next tier): Practice (a test
-  floor), Crumble Yard, The Quarry, Tide Pools, Gale Bridge, Sinking Ship (decks heave on the engine's there-and-back
+  floor), Crumble Yard, The Quarry, Tide Pools, Gale Bridge, Conveyor Sky (rows of tiles that carry whoever stands on them, using the engine's conveyor
+  platforms, #24; a hazard stops them all for a warning and runs them the other
+  way), Sinking Ship (decks heave on the engine's there-and-back
   platform motion in place of lost-footing's sine, halves out of step).
   Stage hazards (`src/hazards.cpp`) run on their rhythm from the match's random
   stream, each announced before it acts: comets skim lanes (a wall or bumper
@@ -81,7 +83,7 @@ difference will be absorbed.
   turn it), rocks fall (aimed at slabs, players or anywhere), the tide rises
   and drowns, a gale blows. Overtime shortens their gaps by 15% a step (to
   40%). A respawned player is untouchable by hazards and contact for 2 s.
-  Not yet: Conveyor Sky's belts. A sturdy slab is a platform on the stress
+  All of lost-footing's stages are here. A sturdy slab is a platform on the stress
   model with no rates; its hit points are in the state, `damage_tile` breaks it
   at 0 (the engine sends it Gone and brings it back whole after 8 s), and the
   collapse wears slabs down. Done: all of Fern's kit (the Vine: a seed that needs ground grows four one-way
@@ -119,7 +121,7 @@ difference will be absorbed.
   refuses anything that is not a well-formed replay of a valid setup. The C face
   records every match and plays one back (`lf_replay_*`).
 - Known gaps against lost-footing: the engine splits a straddler's load equally
-  between the tiles (lost-footing: 75% each); Conveyor Sky is next.
+  between the tiles (lost-footing: 75% each).
 
 How determinism is kept honest (all in `./scripts/verify`, so CI runs it on
 Linux and macOS): the golden hash trace of a scripted 4-player match

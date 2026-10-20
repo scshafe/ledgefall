@@ -88,6 +88,8 @@ void fire(const Rules& rules, State& state, const HazardSpec& spec) {
       hz.tide = TidePhase::Warn;
       hz.tide_timer = static_cast<std::int16_t>(spec.warn);
       break;
+    case HazardType::Belts:  // runs on its own clock (below)
+      break;
     case HazardType::Gale:
       hz.gale = GalePhase::Warn;
       hz.gale_dir = rand_int(state, 0, 1) == 0 ? 1 : -1;
@@ -255,6 +257,13 @@ bool drowned(const State& state, const fp::EntityState& e) {
   return rising && e.pos.y < hz.tide_level - kTideMargin;
 }
 
+void apply_belts(const Rules& rules, State& state) {
+  const bool run = state.hazards.belts == BeltPhase::Run;
+  for (std::size_t i = 0; i < rules.belts.size(); ++i) {
+    state.world.platforms[i].belt = run ? rules.belts[i] * Fixed::from_int(state.hazards.belts_sign) : Fixed::zero();
+  }
+}
+
 void apply_gale(const Rules& rules, State& state) {
   const Hazards& hz = state.hazards;
   if (hz.gale != GalePhase::Blow) return;
@@ -276,12 +285,29 @@ void update_hazards(const Rules& rules, State& state, fp::Events& scratch) {
     const HazardSpec& spec = rules.hazards[i];
     if (spec.type == HazardType::Tide && hz.tide != TidePhase::Calm) continue;
     if (spec.type == HazardType::Gale && hz.gale != GalePhase::Off) continue;
+    if (spec.type == HazardType::Belts) continue;
     if (--hz.timers[i] > 0) continue;
     const int gap = rand_int(state, spec.every_lo, spec.every_hi) * hazard_percent(state.world.frame) / 100;
     hz.timers[i] = static_cast<std::int16_t>(gap);
     fire(rules, state, spec);
   }
   for (const HazardSpec& spec : rules.hazards) {
+    if (spec.type == HazardType::Belts) {
+      // They run for a while, stop (the warning), then run the other way.
+      if (hz.belts == BeltPhase::Run) {
+        if (hz.belts_timer <= 0) {
+          hz.belts_timer = static_cast<std::int16_t>(rand_int(state, spec.every_lo, spec.every_hi) * hazard_percent(state.world.frame) / 100);
+        }
+        if (--hz.belts_timer <= 0) {
+          hz.belts = BeltPhase::Stop;
+          hz.belts_timer = static_cast<std::int16_t>(spec.warn);
+        }
+      } else if (--hz.belts_timer <= 0) {
+        hz.belts = BeltPhase::Run;
+        hz.belts_sign = static_cast<std::int8_t>(-hz.belts_sign);
+        hz.belts_timer = 0;
+      }
+    }
     if (spec.type == HazardType::Tide) update_tide(state, spec);
     if (spec.type == HazardType::Gale) {
       if (hz.gale == GalePhase::Warn && --hz.gale_timer <= 0) {
