@@ -9,12 +9,25 @@ public enum Phase: Equatable {
     case playing
     case paused
     case results(winner: Int?)
+    case browsing    // online: choosing among the open rooms
+    case connecting  // online: opening or joining a room, and waiting for the match to start
 }
 
 /// What the host must do after a menu action.
 public enum FlowEffect: Equatable {
     case startMatch  // a new match with `players` and `stocks`
     case showDemo    // back to a bot-only match behind the setup screen
+    case hostRoom    // online: make a room from the setup, take a seat in it and wait for the others
+    case browseRooms // online: start listing the open rooms
+    case joinRoom(String)  // online: take a seat in this room
+    case leaveOnline // online: drop the room or the match; back to the setup screen
+}
+
+/// Where a match is played.
+public enum PlayMode: Int, CaseIterable, Equatable {
+    case local, host, join
+
+    public var name: String { ["Local, against bots and friends", "Online: host a room", "Online: join a room"][rawValue] }
 }
 
 /// How the seats are split into teams (a match needs two sides; teams of one seat each is "off").
@@ -39,16 +52,24 @@ public struct Flow: Equatable {
     public static let playersRange = 2...4
     public static let stocksRange = 1...5
 
-    // Setup rows: players, stocks, stage, teams, one per seat (the character), start.
-    public static let playersRow = 0, stocksRow = 1, stageRow = 2, teamsRow = 3, firstSeatRow = 4
+    // Setup rows: mode, players, stocks, stage, teams, one per seat (the character), start.
+    public static let modeRow = 0, playersRow = 1, stocksRow = 2, stageRow = 3, teamsRow = 4, firstSeatRow = 5
 
     public private(set) var phase: Phase = .setup
+    public private(set) var mode: PlayMode = .local
+    /// An online match is on (or its results are up): the pause key leaves instead of pausing.
+    public private(set) var online = false
+    /// Online: the open rooms, the one chosen, and what the connecting screen says.
+    public private(set) var rooms: [LobbyRoom] = []
+    public private(set) var roomIndex = 0
+    public private(set) var status = ""
+    public private(set) var failed = false
     public private(set) var players = 2
     public private(set) var stocks = 3
     public private(set) var arena: Arena = .yard
     public private(set) var teamMode: TeamMode = .off
     public private(set) var fighters: [Fighter] = [.mason, .glim, .pip, .fuse]
-    public private(set) var selectedRow = 6
+    public private(set) var selectedRow = 7
 
     public init() {}
 
@@ -67,14 +88,33 @@ public struct Flow: Equatable {
             case .right: adjust(1)
             case .confirm:
                 if selectedRow == startRow {
-                    phase = .playing
-                    return .startMatch
+                    switch mode {
+                    case .local:
+                        phase = .playing
+                        return .startMatch
+                    case .host:
+                        phase = .connecting
+                        status = "Opening a room..."
+                        failed = false
+                        return .hostRoom
+                    case .join:
+                        phase = .browsing
+                        rooms = []
+                        roomIndex = 0
+                        return .browseRooms
+                    }
                 }
                 selectedRow += 1
             case .back, .pause: break
             }
         case .playing:
-            if action == .back || action == .pause { phase = .paused }
+            if action == .back || action == .pause {
+                if online {
+                    leaveOnline()
+                    return .leaveOnline
+                }
+                phase = .paused
+            }
         case .paused:
             switch action {
             case .confirm, .pause: phase = .playing
@@ -85,16 +125,50 @@ public struct Flow: Equatable {
             }
         case .results:
             switch action {
+            case .confirm where online:
+                leaveOnline()
+                return .leaveOnline
             case .confirm:
                 phase = .playing
                 return .startMatch
+            case .back where online:
+                leaveOnline()
+                return .leaveOnline
             case .back:
                 phase = .setup
                 return .showDemo
             default: break
             }
+        case .browsing:
+            switch action {
+            case .up: roomIndex = max(roomIndex - 1, 0)
+            case .down: roomIndex = max(min(roomIndex + 1, rooms.count - 1), 0)
+            case .confirm:
+                guard rooms.indices.contains(roomIndex) else { break }
+                phase = .connecting
+                status = "Taking a seat..."
+                failed = false
+                return .joinRoom(rooms[roomIndex].id)
+            case .back:
+                leaveOnline()
+                return .leaveOnline
+            default: break
+            }
+        case .connecting:
+            if action == .back || (action == .confirm && failed) {
+                leaveOnline()
+                return .leaveOnline
+            }
         }
         return nil
+    }
+
+    private mutating func leaveOnline() {
+        phase = .setup
+        online = false
+        rooms = []
+        status = ""
+        failed = false
     }
 
     /// The match in progress ended.
@@ -102,9 +176,41 @@ public struct Flow: Equatable {
         if phase == .playing { phase = .results(winner: winner) }
     }
 
+    // MARK: online, told by the host as the network answers
+
+    /// The open rooms, as the lobby lists them now (the chosen one stays chosen if it is still there).
+    public mutating func setRooms(_ new: [LobbyRoom]) {
+        guard phase == .browsing else { return }
+        let chosen = rooms.indices.contains(roomIndex) ? rooms[roomIndex].id : nil
+        rooms = new
+        roomIndex = chosen.flatMap { id in new.firstIndex { $0.id == id } } ?? min(roomIndex, max(new.count - 1, 0))
+    }
+
+    public mutating func setStatus(_ text: String) {
+        guard phase == .connecting else { return }
+        status = text
+    }
+
+    /// The online match has started.
+    public mutating func onlineStarted() {
+        guard phase == .connecting else { return }
+        phase = .playing
+        online = true
+    }
+
+    /// Something went wrong online; the screen says what and a key goes back.
+    public mutating func onlineFailed(_ message: String) {
+        guard phase == .connecting || phase == .browsing || (phase == .playing && online) else { return }
+        phase = .connecting
+        status = message
+        failed = true
+        online = false
+    }
+
     private mutating func adjust(_ delta: Int) {
         func wrap(_ i: Int, _ n: Int) -> Int { ((i % n) + n) % n }
         switch selectedRow {
+        case Flow.modeRow: mode = PlayMode(rawValue: wrap(mode.rawValue + delta, PlayMode.allCases.count)) ?? mode
         case Flow.playersRow:
             players = min(max(players + delta, Flow.playersRange.lowerBound), Flow.playersRange.upperBound)
         case Flow.stocksRow: stocks = min(max(stocks + delta, Flow.stocksRange.lowerBound), Flow.stocksRange.upperBound)

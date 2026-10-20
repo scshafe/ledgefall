@@ -11,8 +11,21 @@ final class AppModel: ObservableObject {
     @Published private(set) var humans: [Bool] = []
     /// Per seat: the fighter, and the ticks until each move can be cast again.
     @Published private(set) var kits: [SeatKit] = []
+    /// Online: this client's seat, once the match is on.
+    @Published private(set) var localSeat: Int?
+    /// The lobby's address, from the LEDGEFALL_LOBBY environment variable or `defaults write <app> lobby <url>`.
+    let lobbyAddress: String? = AppModel.configuredLobby()
 
     private(set) var loop: GameLoop
+    /// The online match, once the game server has been found; its view is what is drawn while the match is on.
+    private var session: OnlineSession?
+    private var sessionStarted: Double?
+    private var onlineTask: Task<Void, Never>?
+    private var onlineSeating: Seating = {
+        var s = Seating()
+        s.limit(to: 1)  // one person plays online from this Mac
+        return s
+    }()
     private var seating = Seating()
     private let controllers = Controllers()
     private var previousPads: [Int: GamepadState] = [:]
@@ -22,6 +35,23 @@ final class AppModel: ObservableObject {
     init() {
         loop = GameLoop(match: AppModel.demoMatch())
         publish()
+    }
+
+    /// What is drawn: the online match while one is on, else the local one.
+    var displayMatch: Match { (flow.online ? session?.match : nil) ?? loop.match }
+
+    private static func configuredLobby() -> String? {
+        let text = ProcessInfo.processInfo.environment["LEDGEFALL_LOBBY"] ?? UserDefaults.standard.string(forKey: "lobby")
+        guard let text, !text.isEmpty else { return nil }
+        return text
+    }
+
+    private func lobbyClient() throws -> LobbyClient {
+        guard let address = lobbyAddress else {
+            throw LobbyError("No lobby address. Set LEDGEFALL_LOBBY, or: defaults write ledgefall lobby <address>")
+        }
+        guard let url = URL(string: address.contains("://") ? address : "https://\(address)") else { throw LobbyError("The lobby address is not valid") }
+        return LobbyClient(base: url)
     }
 
     private static func demoMatch() -> Match {
@@ -37,6 +67,12 @@ final class AppModel: ObservableObject {
         switch effect {
         case .startMatch: startMatch()
         case .showDemo: loop = GameLoop(match: AppModel.demoMatch())
+        case .hostRoom: hostRoom()
+        case .browseRooms: browseRooms()
+        case .joinRoom(let id): joinRoom(id)
+        case .leaveOnline:
+            dropOnline()
+            loop = GameLoop(match: AppModel.demoMatch())
         }
         publish()
     }
@@ -63,6 +99,88 @@ final class AppModel: ObservableObject {
         loop = GameLoop(match: match)
     }
 
+    // MARK: online
+
+    private func dropOnline() {
+        onlineTask?.cancel()
+        onlineTask = nil
+        session = nil
+        sessionStarted = nil
+        localSeat = nil
+    }
+
+    /// Run lobby work off the main thread; whatever it throws is shown on the connecting screen.
+    private func runOnline(_ work: @escaping (LobbyClient) async throws -> Void) {
+        onlineTask?.cancel()
+        onlineTask = Task { [weak self] in
+            do {
+                guard let self else { return }
+                try await work(try self.lobbyClient())
+            } catch is CancellationError {
+            } catch {
+                await MainActor.run { self?.flow.onlineFailed("\(error)") }
+            }
+        }
+    }
+
+    private func say(_ text: String) async { await MainActor.run { self.flow.setStatus(text) } }
+
+    private func hostRoom() {
+        let setup = OnlineSetup(
+            arena: flow.arena, stocks: flow.stocks, seed: UInt32(truncatingIfNeeded: Int(Date().timeIntervalSince1970 * 1000)),
+            fighters: Array(flow.fighters.prefix(flow.players)), teams: flow.teamMode.teams(players: flow.players))
+        runOnline { [self] lobby in
+            guard try await lobby.gameServers() > 0 else { throw LobbyError("No game server is registered with the lobby") }
+            let room = try await lobby.createRoom(setup)
+            try await takeSeatAndWait(lobby, room: room, setup: setup)
+        }
+    }
+
+    private func browseRooms() {
+        runOnline { [self] lobby in
+            while true {
+                let rooms = try await lobby.openRooms()
+                await MainActor.run { self.flow.setRooms(rooms) }
+                try await Task.sleep(nanoseconds: 1_000_000_000)
+            }
+        }
+    }
+
+    private func joinRoom(_ id: String) {
+        guard let setup = flow.rooms.first(where: { $0.id == id })?.setup else { return }
+        runOnline { [self] lobby in try await takeSeatAndWait(lobby, room: id, setup: setup) }
+    }
+
+    /// Sit down in a room, say we are ready, and wait for the lobby to hand the room to a game server.
+    private func takeSeatAndWait(_ lobby: LobbyClient, room: String, setup: OnlineSetup) async throws {
+        let secret = try await lobby.join(room, as: AppModel.playerName())
+        try await lobby.ready(room, secret: secret)
+        while true {
+            try Task.checkCancellation()
+            let me = try await lobby.me(room, secret: secret)
+            if me.state == "playing", let token = me.token, let udp = me.udp {
+                guard let opened = OnlineSession(setup: setup, server: udp, room: room, token: token) else {
+                    throw LobbyError("Could not reach the game server at \(udp)")
+                }
+                await MainActor.run {
+                    self.session = opened
+                    self.sessionStarted = Date().timeIntervalSince1970
+                    self.flow.setStatus("Connecting to the game server...")
+                }
+                return
+            }
+            if me.state == "finished" { throw LobbyError("The room is closed") }
+            let r = try await lobby.room(room)
+            await say("Waiting for the other players (\(r.taken) of \(r.seatCount))...")
+            try await Task.sleep(nanoseconds: 500_000_000)
+        }
+    }
+
+    private static func playerName() -> String {
+        let name = ProcessInfo.processInfo.userName.filter { $0.isASCII && ($0.isLetter || $0.isNumber) }
+        return name.isEmpty ? "player" : String(name.prefix(20))
+    }
+
     // MARK: per frame
 
     func frame(now: Double) {
@@ -76,6 +194,37 @@ final class AppModel: ObservableObject {
         previousPads = pads
 
         switch flow.phase {
+        case .browsing:
+            loop.advance(to: now) { [] }  // the demo plays on behind the list
+        case .connecting:
+            loop.advance(to: now) { [] }
+            if let session {
+                switch session.update() {
+                case .running:
+                    flow.onlineStarted()
+                    localSeat = session.seat
+                case .failed, .ended:
+                    flow.onlineFailed("The game server did not accept us")
+                    self.session = nil
+                case .connecting, .waiting:
+                    if let started = sessionStarted, Date().timeIntervalSince1970 - started > 30 {
+                        flow.onlineFailed("The game server did not answer")
+                        self.session = nil
+                    }
+                }
+            }
+        case .playing where flow.online:
+            if let session {
+                let update = onlineSeating.update(DeviceFrame(keys: heldKeys, pads: controllers.states()))
+                session.setInput(update.inputs.first ?? PlayerInput())
+                let state = session.update()
+                localSeat = session.seat
+                if session.match.isOver {
+                    flow.matchOver(winner: session.match.winner)
+                } else if state == .failed || state == .ended {
+                    flow.onlineFailed("Disconnected from the game server")
+                }
+            }
         case .setup:
             if loop.match.isOver { loop = GameLoop(match: AppModel.demoMatch()) }
             loop.advance(to: now) { [] }  // the demo match plays itself
@@ -91,6 +240,8 @@ final class AppModel: ObservableObject {
                 flow.matchOver(winner: match.winner)
                 saveReplay(of: match)
             }
+        case .results where flow.online:
+            _ = session?.update()  // keep answering the server until we leave
         case .paused, .results:
             loop.idle(to: now)  // no ticks run, but the clock stays current so resuming does not lurch
         }
@@ -112,9 +263,9 @@ final class AppModel: ObservableObject {
     }
 
     private func publish() {
-        let match = loop.match
+        let match = displayMatch
         let newStocks = (0..<match.players).map { match.player($0).stocks }
-        let newHumans = (0..<match.players).map { seating.devices[$0] != nil && flow.phase != .setup }
+        let newHumans = (0..<match.players).map { flow.online || (seating.devices[$0] != nil && flow.phase != .setup) }
         if newStocks != stocks { stocks = newStocks }
         if newHumans != humans { humans = newHumans }
         let newKits = (0..<match.players).map { seat -> SeatKit in
