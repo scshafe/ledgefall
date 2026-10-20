@@ -3,20 +3,21 @@
 #include <vector>
 
 #include "check.hpp"
+#include "ledgefall/bot.hpp"
 #include "ledgefall/match.hpp"
 
 using namespace ledgefall;
 
 namespace {
 
-// Seat 0 paces the bottom tier, running to one end and back; seat 1 stands still.
-// The pacer is the one who is still in the match longer.
+// A bot keeps moving; seat 1 stands still. The bot is the one who is still in the match longer.
 void test_keeping_moving_outlasts_standing_still() {
   const auto rules = make_rules({2, 1});
   State s = make_state(*rules);
+  Bot bot;
+  bot.level = BotLevel::Hard;
   for (int t = 0; t < 6000 && !s.over; ++t) {
-    const int phase = (t / 40) % 2;
-    const std::vector<Input> in{{static_cast<std::int8_t>(phase == 0 ? 100 : -100), 0}, {0, 0}};
+    const std::vector<Input> in{bot_input(*rules, s, 0, bot), {0, 0}};
     step(*rules, s, in);
   }
   CHECK(s.over && s.winner == 0);

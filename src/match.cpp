@@ -153,6 +153,7 @@ State make_state(const Rules& rules) {
   }
   for (int i = 0; i < n; ++i) {
     s.world.entities.push_back(spawn_at(rules.spawns[static_cast<std::size_t>(i)]));
+    detail::place_halo(rules, s, i, rules.spawns[static_cast<std::size_t>(i)]);
     PlayerState p;
     const auto handicap = rules.setup.seat_stocks[static_cast<std::size_t>(i)];
     p.stocks = static_cast<std::int8_t>(handicap > 0 ? handicap : rules.setup.stocks);
@@ -166,6 +167,10 @@ void step(const Rules& rules, State& state, std::span<const Input> inputs) {
   if (state.over) return;
   const std::size_t n = state.players.size();
   fp::Events events, scratch;
+  // Who stood on what at the start of the tick: what a tile that breaks this tick (a hollow's, a cast's)
+  // drops is credited with.
+  std::vector<std::int16_t> support_before(n);
+  for (std::size_t i = 0; i < n; ++i) support_before[i] = state.world.entities[i].support;
 
   // Moves: cooldowns run, a button that went down casts.
   for (std::size_t i = 0; i < n; ++i) {
@@ -191,10 +196,10 @@ void step(const Rules& rules, State& state, std::span<const Input> inputs) {
   detail::apply_gale(rules, state);
   detail::apply_wind_and_drill(rules, state, intents);
   std::vector<fp::Vec2> vel_before(n);
-  std::vector<std::int16_t> support_before(n);
+  std::vector<fp::Vec2> pos_before(n);
   for (std::size_t i = 0; i < n; ++i) {
+    pos_before[i] = state.world.entities[i].pos;
     vel_before[i] = state.world.entities[i].vel;
-    support_before[i] = state.world.entities[i].support;
   }
 
   fp::step(rules.engine, state.world, intents, events);
@@ -209,6 +214,7 @@ void step(const Rules& rules, State& state, std::span<const Input> inputs) {
   detail::vertical_contacts(rules, state, events, vel_before, scratch);
   detail::after_step(rules, state, events, scratch);
   detail::update_objects(rules, state, scratch);
+  detail::oneway_upkeep(rules, state, pos_before, scratch);
   detail::credit_crumbles(rules, state, events, support_before);
   detail::credit_crumbles(rules, state, scratch, support_before);
   overtime(rules, state, events);
@@ -224,8 +230,10 @@ void step(const Rules& rules, State& state, std::span<const Input> inputs) {
     PlayerState& p = state.players[i];
     if (p.respawn_timer > 0) {
       if (--p.respawn_timer == 0) {
-        state.world.entities[i] = spawn_at(farthest_spawn(rules, state, static_cast<int>(i)));
+        const fp::Vec2& at = farthest_spawn(rules, state, static_cast<int>(i));
+        state.world.entities[i] = spawn_at(at);
         p.invuln = kInvulnTicks;
+        detail::place_halo(rules, state, static_cast<int>(i), at);
       }
     } else if (state.world.entities[i].eliminated != 0 && p.stocks > 0) {
       eliminate(rules, state, i);

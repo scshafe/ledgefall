@@ -140,6 +140,7 @@ bool cast(const Rules& rules, State& state, int seat, int slot, const Input& in,
   switch (c) {
     case Character::Mason:
       if (slot == 0) done = cast_wall(rules, state, seat, events);
+      else if (slot == 1) done = cast_ledge(state, rules, seat, events);
       else if (slot == 2) done = cast_anvil(state, rules, seat, in);
       break;
     case Character::Pip:
@@ -152,12 +153,14 @@ bool cast(const Rules& rules, State& state, int seat, int slot, const Input& in,
       else if (slot == 1) done = throw_lob(state, rules, seat, Payload::Charge, in);
       else done = cast_saw(state, rules, seat);
       break;
-    case Character::Fern:  // the vine waits on fighter-physics#21
+    case Character::Fern:  // the vine is its own PR
       if (slot == 1) done = cast_thorns(state, rules, seat);
       else if (slot == 2) done = cast_roots(state, rules, seat);
       break;
-    case Character::Dab:  // the decoy and hollow tile wait on fighter-physics#21
-      if (slot == 2) done = cast_rub(state, rules, seat);
+    case Character::Dab:
+      if (slot == 0) done = cast_decoy(state, rules, seat, in, events);
+      else if (slot == 1) done = cast_hollow(state, rules, seat);
+      else done = cast_rub(state, rules, seat);
       break;
     case Character::Ferro:
       if (slot == 0) done = cast_lodestone(state, rules, seat);
@@ -178,9 +181,13 @@ void arm_pending(const Rules& rules, State& state, fp::Events& events) {
   for (Pending& p : state.pending) {
     if (!p.used || --p.delay > 0) continue;
     p.used = false;
+    if (p.tag == kPendingHollow) {
+      arm_hollow(rules, state, p, events);
+      continue;
+    }
     // The tile it was to stand on may have gone while it armed.
     if (p.support >= 0 && gone(state.world.platforms[static_cast<std::size_t>(p.support)].phase)) continue;
-    limit_owned(rules, state, p.owner, p.what.kind, p.tag == 1 ? kThornMax : kSpringMax, events, p.tag);
+    limit_owned(rules, state, p.owner, p.what.kind, p.tag == kPendingBramble ? kThornMax : kSpringMax, events, p.tag);
     register_placed(state, fp::place(state.world, p.what), p.owner, p.uses, p.support, p.tag);
   }
 }
@@ -217,7 +224,7 @@ void after_step(const Rules& rules, State& state, const fp::Events& events, fp::
   for (std::size_t slot = 0; slot < state.world.placeables.size(); ++slot) {
     const fp::Placeable& p = state.world.placeables[slot];
     const PlaceableMeta& m = state.meta[slot];
-    if (m.owner < 0 || p.active == 0 || m.tag != 1) continue;
+    if (m.owner < 0 || p.active == 0 || m.tag != kTagBramble) continue;
     const auto& platforms = rules.engine.stage.platforms;
     for (std::size_t t = 0; t < platforms.size(); ++t) {
       if (rules.slab_hp[t] != 0 || !in_play(state.world.platforms[t].phase)) continue;
@@ -273,7 +280,7 @@ void apply_modifiers(State& state) {
         if (p.active == 0 || p.kind != fp::PlaceableKind::Sticky) continue;
         if (e.pos.x < p.rect.left || e.pos.x > p.rect.right || e.pos.y < p.rect.bottom || e.pos.y > p.rect.top) continue;
         any = true;
-        if (state.meta[slot].tag == 1) {  // brambles: speed x0.4 (the patch), accel x0.5, jump x0.8
+        if (state.meta[slot].tag == kTagBramble) {  // brambles: speed x0.4 (the patch), accel x0.5, jump x0.8
           m.ground_accel = m.ground_accel * fx100(50);
           m.air_accel = m.air_accel * fx100(50);
           m.jump = m.jump * fx100(80);

@@ -12,7 +12,7 @@
 namespace ledgefall {
 namespace {
 
-constexpr std::uint8_t kMagic0 = 'L', kMagic1 = 'F', kVersion = 9;
+constexpr std::uint8_t kMagic0 = 'L', kMagic1 = 'F', kVersion = 10;
 constexpr std::size_t kHeaderBytes = 3;
 
 // An integer or an enum, as the unsigned integer of its own width.
@@ -101,6 +101,7 @@ void io_placeable(A& a, fp::Placeable& p) {
   a.fx(p.speed_scale);
   a.fx(p.launch.x);
   a.fx(p.launch.y);
+  a.num(p.only_for);
 }
 
 // Everything but the engine's world, in a fixed order. `players` is the
@@ -186,17 +187,17 @@ bool plausible(const Rules& rules, const State& s) {
   }
   if (s.winner < -1 || s.winner >= n) return false;
   for (const PlaceableMeta& m : s.meta) {
-    if (m.tag > 1) return false;
+    if (m.tag > kTagMax) return false;
     if (m.owner < -1 || m.owner >= n || m.support < -1 ||
         m.support >= static_cast<int>(rules.engine.stage.platforms.size())) {
       return false;
     }
   }
   for (const Pending& p : s.pending) {
-    if (p.tag > 1) return false;
+    if (p.tag > kPendingHollow) return false;
     if (p.owner < -1 || p.owner >= n || p.delay < 0 || p.delay > 5 * kTicksPerSecond) return false;
     if (p.support < -1 || p.support >= static_cast<int>(rules.engine.stage.platforms.size())) return false;
-    if (static_cast<int>(p.what.kind) > static_cast<int>(fp::PlaceableKind::Spring) || p.what.active > 1) return false;
+    if (static_cast<int>(p.what.kind) > static_cast<int>(fp::PlaceableKind::OneWay) || p.what.only_for < -1 || p.what.only_for >= n || p.what.active > 1) return false;
     if (p.used && p.owner < 0) return false;
   }
   for (const Object& o : s.objects) {

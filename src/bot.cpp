@@ -158,7 +158,7 @@ bool plan_move(const Rules& rules, const State& state, int seat, const Bot& bot,
       return false;
     }
     case Character::Dab:
-      return ahead(2, 16, 58);
+      return ahead(1, 14, 50) || ahead(2, 16, 58);  // hollow the tiles under someone, or rub them out
     case Character::Fern:
       return ahead(1, 16, 54) || ahead(2, 20, 50);
     case Character::Ferro: {

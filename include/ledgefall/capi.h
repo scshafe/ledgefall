@@ -75,7 +75,8 @@ enum lf_thing_kind {
   LF_THING_WALL, LF_THING_SPRING, LF_THING_GLUE, LF_THING_OIL, LF_THING_LOB, LF_THING_ACID, LF_THING_GUST,
   LF_THING_ANVIL, LF_THING_BUMPER, LF_THING_CHARGE, LF_THING_SAW,
   LF_THING_THORNS, LF_THING_ROOTS, LF_THING_RUB, LF_THING_MAGNET,
-  LF_THING_COMET, LF_THING_ROCK, LF_THING_COMET_WARN, LF_THING_ROCK_WARN /* stage hazards; owner is the seat that steered it, -1 for none */
+  LF_THING_COMET, LF_THING_ROCK, LF_THING_COMET_WARN, LF_THING_ROCK_WARN, /* stage hazards; owner is the seat that steered it, -1 for none */
+  LF_THING_LEDGE, LF_THING_DECOY, LF_THING_HALO, LF_THING_HOLLOW, LF_THING_LEAF /* one-way platforms; owner is the seat they hold for */
 };
 
 typedef struct lf_thing {

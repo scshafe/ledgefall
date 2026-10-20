@@ -81,11 +81,14 @@ difference will be absorbed.
   turn it), rocks fall (aimed at slabs, players or anywhere), the tide rises
   and drowns, a gale blows. Overtime shortens their gaps by 15% a step (to
   40%). A respawned player is untouchable by hazards and contact for 2 s.
-  Not yet: the respawn halo (fighter-physics#21) and Conveyor Sky's belts
-  (fighter-physics#24). A sturdy slab is a platform on the stress
+  Not yet: Conveyor Sky's belts. A sturdy slab is a platform on the stress
   model with no rates; its hit points are in the state, `damage_tile` breaks it
   at 0 (the engine sends it Gone and brings it back whole after 8 s), and the
-  collapse wears slabs down. Done: all of Ferro's kit (lodestone, polarity, ingot: loose metal a lodestone pulls changes owner, and so does its credit), Mason's Wall and Anvil, Fern's Thorns and Roots, Dab's Rub out, all of Fuse's kit (bumper, charge, saw), all of Pip's kit (Spring with its air launch, Gust, Drill), all of Glim's kit.
+  collapse wears slabs down. Done: the one-way placeables (fighter-physics#21; `src/oneway.cpp`): Mason's
+  Ledge (hit points, one at a time), Dab's Decoy (solid for her alone; whoever
+  falls through is credited to her) and Hollow (tiles shimmer, then go, and a floor
+  only she holds replaces them for 2.5 s), and the respawn halo (a personal
+  platform for 3 s that goes when its owner steps off). Done: all of Ferro's kit (lodestone, polarity, ingot: loose metal a lodestone pulls changes owner, and so does its credit), Mason's Wall and Anvil, Fern's Thorns and Roots, Dab's Rub out, all of Fuse's kit (bumper, charge, saw), all of Pip's kit (Spring with its air launch, Gust, Drill), all of Glim's kit.
   Lobs and acid puddles are `Object`s in the state (`src/objects.cpp`); glue and
   oil become the engine's sticky and slick patches; tiles remember who last
   stressed them (`tile_blame`), so a tile that drops someone credits its maker.
@@ -114,9 +117,9 @@ difference will be absorbed.
   the state's hash, which `verify` checks by running it again. `decode_replay`
   refuses anything that is not a well-formed replay of a valid setup. The C face
   records every match and plays one back (`lf_replay_*`).
-- Known gaps against lost-footing: the respawn halo and post-respawn immunity
-  wait for hazards; the engine splits a straddler's load equally between the
-  tiles (lost-footing: 75% each).
+- Known gaps against lost-footing: the engine splits a straddler's load equally
+  between the tiles (lost-footing: 75% each); Fern's Vine and Conveyor Sky are
+  next.
 
 How determinism is kept honest (all in `./scripts/verify`, so CI runs it on
 Linux and macOS): the golden hash trace of a scripted 4-player match

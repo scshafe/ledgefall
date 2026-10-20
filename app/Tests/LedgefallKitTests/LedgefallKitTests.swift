@@ -47,7 +47,8 @@ final class MatchTests: XCTestCase {
 
     func testThingsStartEmptyAndSlabsAreSturdy() throws {
         let match = try XCTUnwrap(Match(players: 2, arena: .yard))
-        XCTAssertEqual(match.thingCount, 0)
+        XCTAssertEqual(match.thingCount, 2)  // a halo under each player
+        XCTAssertEqual(match.thing(0)?.kind, .halo)
         let sturdy = (0..<match.platformCount).compactMap { match.platform($0) }.filter { $0.sturdy }
         XCTAssertEqual(sturdy.count, 3)
         XCTAssertEqual(sturdy.first?.hp, 4)

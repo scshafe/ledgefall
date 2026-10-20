@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "check.hpp"
+#include "halos.hpp"
 #include "ledgefall/match.hpp"
 
 using namespace ledgefall;
@@ -59,7 +60,7 @@ void test_wall_cooldown_and_limit() {
   CHECK(s.players[0].stats.placed == 1 && s.players[0].cooldown[0] > 0);
   // The wall stands ahead of Mason (he faces +x), whole and solid.
   for (std::size_t i = 0; i < s.world.placeables.size(); ++i) {
-    if (s.world.placeables[i].active == 0) continue;
+    if (s.world.placeables[i].active == 0 || s.world.placeables[i].kind != fp::PlaceableKind::Wall) continue;
     CHECK(s.meta[i].owner == 0);
     CHECK(s.world.placeables[i].rect.left > s.world.entities[0].pos.x);
   }
@@ -118,7 +119,9 @@ void test_spring_arms_launches_and_credits() {
 
 void test_air_spring_launches_the_caster() {
   const Rules r = rules_for(Character::Pip, Character::Glim);
-  State s = make_state(r);  // both start in the air
+  State s = make_state(r);
+  clear_halos(r, s);  // both start in the air, well above the tiers
+  for (fp::EntityState& e : s.world.entities) e.pos.y = Fixed::from_int(150);
   tick(r, s);
   const Fixed before = s.world.entities[0].vel.y;
   tick(r, s, kPlace);
