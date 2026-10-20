@@ -176,9 +176,13 @@ int lf_match_thing(const lf_match* m, int index, lf_thing* out) {
   for (std::size_t slot = 0; slot < m->state.world.placeables.size(); ++slot) {
     const fp::Placeable& p = m->state.world.placeables[slot];
     if (p.active == 0 || at++ != index) continue;
-    out->kind = p.kind == fp::PlaceableKind::Wall ? LF_THING_WALL
+    const std::uint8_t tag = m->state.meta[slot].tag;
+    out->kind = p.kind == fp::PlaceableKind::OneWay
+                    ? (tag == kTagLedge ? LF_THING_LEDGE : tag == kTagDecoy ? LF_THING_DECOY : tag == kTagHalo ? LF_THING_HALO
+                       : tag == kTagHollow ? LF_THING_HOLLOW : LF_THING_LEAF)
+                : p.kind == fp::PlaceableKind::Wall ? LF_THING_WALL
                 : p.kind == fp::PlaceableKind::Spring ? LF_THING_SPRING
-                : p.kind == fp::PlaceableKind::Sticky ? (m->state.meta[slot].tag == 1 ? LF_THING_THORNS : LF_THING_GLUE)
+                : p.kind == fp::PlaceableKind::Sticky ? (m->state.meta[slot].tag == kTagBramble ? LF_THING_THORNS : LF_THING_GLUE)
                                                       : LF_THING_OIL;
     out->left = p.rect.left.raw();
     out->right = p.rect.right.raw();

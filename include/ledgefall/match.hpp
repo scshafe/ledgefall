@@ -129,6 +129,21 @@ struct PlayerState {
   friend bool operator==(const PlayerState&, const PlayerState&) = default;
 };
 
+// What a placeable is for, beyond its engine kind (PlaceableMeta::tag).
+enum PlaceableTag : std::uint8_t {
+  kTagPlain = 0,
+  kTagBramble = 1,  // a sticky patch that chews tiles (thorns)
+  kTagLedge = 2,    // Mason's ledge: a sturdy temporary slab (hit points in `uses`)
+  kTagDecoy = 3,    // Dab's decoy: floor only she can stand on
+  kTagHalo = 4,     // a respawned player's personal platform
+  kTagHollow = 5,   // the floor of a hollowed tile: only Dab holds on it
+  kTagLeaf = 6,     // Fern's vine leaf
+  kTagMax = 6,
+};
+// Pending::tag: a placement that is not a plain placeable.
+constexpr std::uint8_t kPendingBramble = 1;
+constexpr std::uint8_t kPendingHollow = 7;  // Dab's hollow: the span of tiles to turn when it arms
+
 // An object a move has placed that the engine has a slot for. The engine's
 // slot knows its shape and lifetime; this knows whose it is.
 struct PlaceableMeta {

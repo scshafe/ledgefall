@@ -48,6 +48,11 @@ public enum Scene {
         case .magnet: return SIMD4(0.75, 0.25, 0.85, 1)
         case .comet: return SIMD4(1.00, 0.60, 0.20, 1)
         case .rock: return SIMD4(0.45, 0.40, 0.35, 1)
+        case .ledge: return SIMD4(0.55, 0.60, 0.68, 1)
+        case .decoy: return SIMD4(0.62, 0.50, 0.38, 1)  // looks like a tile, to everyone
+        case .halo: return SIMD4(1.00, 0.95, 0.60, 0.8)
+        case .hollow: return SIMD4(0.62, 0.50, 0.38, 1)
+        case .leaf: return SIMD4(0.35, 0.75, 0.30, 1)
         case .cometWarning, .rockWarning: return SIMD4(1.00, 0.30, 0.20, 0.25)
         }
     }

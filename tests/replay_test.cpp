@@ -44,8 +44,10 @@ void test_a_replay_reproduces_its_match() {
   CHECK(r.ticks > 300);
   CHECK(verify(r));
   Replay bent = r;
-  bent.inputs[bent.inputs.size() / 3].move_x = static_cast<std::int8_t>(-bent.inputs[bent.inputs.size() / 3].move_x + 50);
-  bent.inputs[bent.inputs.size() / 3].buttons ^= kButtonJump;
+  for (std::size_t i = bent.inputs.size() / 4; i < bent.inputs.size(); i += 5) {  // a different match from a quarter in
+    bent.inputs[i].move_x = static_cast<std::int8_t>(-bent.inputs[i].move_x + 50);
+    bent.inputs[i].buttons ^= kButtonJump;
+  }
   CHECK(!verify(bent));  // a different match does not end with the same state
 }
 

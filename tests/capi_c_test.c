@@ -41,9 +41,10 @@ int main(void) {
   lf_platform plat;
   CHECK(lf_match_platform(m, 0, &plat) && plat.left < plat.right && plat.bottom < plat.top);
   CHECK(!lf_match_platform(m, lf_match_platform_count(m), &plat));
-  CHECK(lf_match_thing_count(m) == 0);
+  CHECK(lf_match_thing_count(m) == 4);  /* a halo under each player */
   lf_thing th;
-  CHECK(!lf_match_thing(m, 0, &th));
+  CHECK(lf_match_thing(m, 0, &th) && th.kind == LF_THING_HALO);
+  CHECK(!lf_match_thing(m, 4, &th));
   int32_t blast[4];
   lf_match_blast(m, blast);
   CHECK(blast[0] < blast[1] && blast[2] < blast[3]);

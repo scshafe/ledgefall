@@ -19,7 +19,7 @@ set(BUILD_TESTING OFF)
 FetchContent_MakeAvailable(fighter_physics)
 set(BUILD_TESTING ${_ledgefall_build_testing})
 
-add_library(ledgefall_core src/version.cpp src/input.cpp src/stage.cpp src/match.cpp src/state_io.cpp src/bot.cpp src/capi.cpp src/characters.cpp src/moves.cpp src/contact.cpp src/objects.cpp src/hazards.cpp src/replay.cpp)
+add_library(ledgefall_core src/version.cpp src/input.cpp src/stage.cpp src/match.cpp src/state_io.cpp src/bot.cpp src/capi.cpp src/characters.cpp src/moves.cpp src/contact.cpp src/objects.cpp src/hazards.cpp src/replay.cpp src/oneway.cpp)
 add_library(ledgefall::ledgefall_core ALIAS ledgefall_core)
 target_link_libraries(ledgefall_core PUBLIC fp::fighter_physics)
 target_include_directories(ledgefall_core PUBLIC
@@ -77,7 +77,7 @@ if(BUILD_TESTING)
   target_link_libraries(ledgefall_core_match_test PRIVATE ledgefall::ledgefall_core)
   add_test(NAME ledgefall_core_match COMMAND ledgefall_core_match_test)
 
-  foreach(name scenario determinism_trace bot capi kit glim pip slab fuse fern_dab ferro hazard team replay)
+  foreach(name scenario determinism_trace bot capi kit glim pip slab fuse fern_dab ferro hazard team replay oneway)
     add_executable(ledgefall_core_${name}_test tests/${name}_test.cpp)
     target_link_libraries(ledgefall_core_${name}_test PRIVATE ledgefall::ledgefall_core)
     target_compile_definitions(ledgefall_core_${name}_test PRIVATE

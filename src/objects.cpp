@@ -64,7 +64,8 @@ const Fixed kAcidStress = Fixed::from_raw(Fixed::kOneRaw / 40);
 
 struct Surface {
   Fixed left, right, top;
-  int tile;  // stage platform, or -1 for a wall
+  int tile;       // stage platform, or -1 for a placeable
+  int slot = -1;  // the placeable's slot
 };
 
 // What a lob can land on, found highest first by the caller.
@@ -77,8 +78,14 @@ void each_surface(const Rules& rules, const State& state, F&& f) {
     f(Surface{platforms[i].rect.left + s.offset.x, platforms[i].rect.right + s.offset.x,
               platforms[i].rect.top + s.offset.y, static_cast<int>(i)});
   }
-  for (const fp::Placeable& p : state.world.placeables) {
-    if (p.active != 0 && p.kind == fp::PlaceableKind::Wall) f(Surface{p.rect.left, p.rect.right, p.rect.top, -1});
+  // Walls, and the ledges and leaves that are solid to objects (decoys, halos and hollow floors are not).
+  for (std::size_t slot = 0; slot < state.world.placeables.size(); ++slot) {
+    const fp::Placeable& p = state.world.placeables[slot];
+    if (p.active == 0) continue;
+    const std::uint8_t tag = state.meta[slot].tag;
+    if (p.kind == fp::PlaceableKind::Wall || (p.kind == fp::PlaceableKind::OneWay && (tag == kTagLedge || tag == kTagLeaf))) {
+      f(Surface{p.rect.left, p.rect.right, p.rect.top, -1, static_cast<int>(slot)});
+    }
   }
 }
 
@@ -274,13 +281,10 @@ void update_anvil(const Rules& rules, State& state, Object& o, fp::Events& scrat
       bool stopped = false;
       each_surface(rules, state, [&](const Surface& s) {
         if (s.top != top || right <= s.left + fx100(60) || left >= s.right - fx100(60)) return;
-        if (s.tile < 0) {  // a wall under it is smashed
-          for (std::size_t slot = 0; slot < state.world.placeables.size(); ++slot) {
-            const fp::Placeable& p = state.world.placeables[slot];
-            if (p.active != 0 && p.kind == fp::PlaceableKind::Wall && p.rect.top == top && right > p.rect.left && left < p.rect.right) {
-              fp::remove_placeable(rules.engine, state.world, static_cast<int>(slot), scratch);
-              state.meta[slot] = {};
-            }
+        if (s.tile < 0) {  // a wall, ledge or leaf under it is smashed
+          if (s.slot >= 0 && state.world.placeables[static_cast<std::size_t>(s.slot)].active != 0) {
+            fp::remove_placeable(rules.engine, state.world, s.slot, scratch);
+            state.meta[static_cast<std::size_t>(s.slot)] = {};
           }
           return;
         }
@@ -407,6 +411,14 @@ void update_rub(const Rules& rules, State& state, Object& o, fp::Events& scratch
     if (s.tile < 0 || s.top != stroke.pos.y || s.left >= stroke.x1 || s.right <= stroke.x0) return;
     damage_tile(rules, state, s.tile, 2, stroke.owner, scratch);
   });
+  for (std::size_t slot = 0; slot < state.world.placeables.size(); ++slot) {  // ledges and leaves in its span too
+    const fp::Placeable& p = state.world.placeables[slot];
+    const std::uint8_t tag = state.meta[slot].tag;
+    if (p.active == 0 || p.kind != fp::PlaceableKind::OneWay || (tag != kTagLedge && tag != kTagLeaf)) continue;
+    if (p.rect.top != stroke.pos.y || p.rect.left >= stroke.x1 || p.rect.right <= stroke.x0) continue;
+    fp::remove_placeable(rules.engine, state.world, static_cast<int>(slot), scratch);
+    state.meta[slot] = {};
+  }
 }
 
 // Everything within reach of the blast is broken or destroyed.
@@ -995,7 +1007,7 @@ bool cast_thorns(State& state, const Rules& rules, int seat) {
     patch.life = kThornLife;
     patch.traction_scale = Fixed::from_int(2);
     patch.speed_scale = kThornSpeed;
-    p = {true, static_cast<std::int8_t>(seat), kThornGrow, patch, static_cast<std::int16_t>(tile), 0, 1};
+    p = {true, static_cast<std::int8_t>(seat), kThornGrow, patch, static_cast<std::int16_t>(tile), 0, kPendingBramble};
     return true;
   }
   return false;

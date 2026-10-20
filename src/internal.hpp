@@ -53,6 +53,18 @@ bool cast_rub(State& state, const Rules& rules, int seat);
 int tile_under_feet(const Rules& rules, const fp::EntityState& e);
 
 bool cast_anvil(State& state, const Rules& rules, int seat, const Input& in, bool ingot = false);
+// Mason's ledge, Dab's decoy and hollow (one-way placeables), and the respawn halo.
+bool cast_ledge(State& state, const Rules& rules, int seat, fp::Events& events);
+bool cast_decoy(State& state, const Rules& rules, int seat, const Input& in, fp::Events& events);
+bool cast_hollow(State& state, const Rules& rules, int seat);
+void arm_hollow(const Rules& rules, State& state, const Pending& p, fp::Events& scratch);
+// A personal platform for a player who has just come into play at `at` (the player's feet are put on it).
+void place_halo(const Rules& rules, State& state, int seat, const fp::Vec2& at);
+// Per tick, after the engine has stepped: halos go when stepped off, decoys fool, a ledge takes damage.
+void oneway_upkeep(const Rules& rules, State& state, const std::vector<fp::Vec2>& pos_before, fp::Events& scratch);
+// Hit a ledge or leaf (hit points in `uses`); gone at 0.
+void damage_ledge(const Rules& rules, State& state, int slot, int amount, fp::Events& scratch);
+
 bool cast_lodestone(State& state, const Rules& rules, int seat);
 bool cast_polarity(State& state, const Rules& rules, int seat);
 

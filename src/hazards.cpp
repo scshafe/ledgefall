@@ -162,7 +162,9 @@ void update_rock(const Rules& rules, State& state, HazardItem& r, fp::Events& sc
   }
   for (std::size_t slot = 0; slot < state.world.placeables.size(); ++slot) {
     const fp::Placeable& p = state.world.placeables[slot];
-    if (p.active == 0 || (p.kind != fp::PlaceableKind::Wall && p.kind != fp::PlaceableKind::Spring)) continue;
+    const std::uint8_t tag = state.meta[slot].tag;
+    const bool ledge = p.kind == fp::PlaceableKind::OneWay && (tag == kTagLedge || tag == kTagLeaf);
+    if (p.active == 0 || (p.kind != fp::PlaceableKind::Wall && p.kind != fp::PlaceableKind::Spring && !ledge)) continue;
     if (circle_box(r.pos.x, r.pos.y, kRockRadius, p.rect)) {
       fp::remove_placeable(rules.engine, state.world, static_cast<int>(slot), scratch);
       state.meta[slot] = {};
