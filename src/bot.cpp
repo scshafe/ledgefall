@@ -26,6 +26,32 @@ bool tide_over(const State& state, Fixed top) {
   return top < hz.tide_level + Fixed::from_int(6);
 }
 
+// A tile's conveyor speed as it will be: during the stop that warns of a reversal, the way it will run next.
+Fixed belt_of(const Rules& rules, const State& state, std::size_t i) {
+  if (i >= rules.belts.size()) return Fixed::zero();
+  const int sign = state.hazards.belts == BeltPhase::Stop ? -state.hazards.belts_sign : state.hazards.belts_sign;
+  return rules.belts[i] * Fixed::from_int(sign);
+}
+
+// Whether another tile of the row continues past this one's end, on the side `dir` (+1 right, -1 left).
+bool row_continues(const Rules& rules, std::size_t i, int dir) {
+  const auto& platforms = rules.engine.stage.platforms;
+  const fp::Rect& r = platforms[i].rect;
+  for (std::size_t j = 0; j < platforms.size(); ++j) {
+    if (j == i || platforms[j].rect.top != r.top) continue;
+    const Fixed gap = dir > 0 ? platforms[j].rect.left - r.right : r.left - platforms[j].rect.right;
+    if (fp::abs(gap) < Fixed::one()) return true;
+  }
+  return false;
+}
+
+// Whether a belt on this tile carries someone standing on it off the end of its row.
+bool belt_carries_off(const Rules& rules, const State& state, std::size_t i) {
+  const Fixed b = belt_of(rules, state, i);
+  if (b == Fixed::zero()) return false;
+  return !row_continues(rules, i, b > Fixed::zero() ? 1 : -1);
+}
+
 void choose_target(const Rules& rules, const State& state, const fp::EntityState& e, Bot& bot) {
   bot.target = -1;
   Fixed best = Fixed::from_int(1 << 14);
@@ -34,7 +60,13 @@ void choose_target(const Rules& rules, const State& state, const fp::EntityState
     if (state.world.platforms[i].phase != fp::PlatformPhase::Solid) continue;  // not shaking, gone or destroyed
     if (e.support == static_cast<std::int16_t>(i)) continue;  // standing still on a tile is what breaks it
     if (tide_over(state, stage.platforms[i].rect.top)) continue;  // under water, or about to be
-    const Fixed c = cost(stage.platforms[i], e);
+    Fixed c = cost(stage.platforms[i], e);
+    if (belt_carries_off(rules, state, i)) c = c + Fixed::from_int(40);  // a belt that sweeps the end of its row off
+    // Upwind of where the gale blows is easier to hold than downwind.
+    if (state.hazards.gale != GalePhase::Off) {
+      const Fixed ahead = (centre_x(stage.platforms[i]) - e.pos.x) * Fixed::from_int(state.hazards.gale_dir);
+      if (ahead > Fixed::zero()) c = c + ahead / Fixed::from_int(2);
+    }
     if (c < best) {
       best = c;
       bot.target = static_cast<std::int16_t>(i);
@@ -288,6 +320,33 @@ void dodge_hazards(const State& state, int seat, Bot& bot, Input& in) {
   }
 }
 
+// The gale (announced, then blowing) shoves everyone one way: lean into it when it would carry us out,
+// that is when we are in the air or on the downwind side of the stage.
+void lean_into_gale(const Rules& rules, const State& state, int seat, Bot& bot, Input& in) {
+  const Hazards& hz = state.hazards;
+  if (bot.blind || hz.gale == GalePhase::Off) return;
+  const fp::EntityState& e = state.world.entities[static_cast<std::size_t>(seat)];
+  const fp::Rect& blast = rules.engine.stage.blast;
+  const Fixed centre = (blast.left + blast.right) / Fixed::from_int(2);
+  const Fixed downwind = (e.pos.x - centre) * Fixed::from_int(hz.gale_dir);  // + : on the side it blows towards
+  const Fixed half = (blast.right - blast.left) / Fixed::from_int(2);
+  if (downwind > half / Fixed::from_int(2) || (e.mode == fp::Mode::Airborne && downwind > Fixed::zero())) {
+    in.move_x = static_cast<std::int8_t>(-hz.gale_dir * kAxisMax);
+  }
+}
+
+// A belt that runs off the end of the row: stop at the end and walk against it, unless we mean to drop down.
+void hold_against_belt(const Rules& rules, const State& state, int seat, Input& in) {
+  const fp::EntityState& e = state.world.entities[static_cast<std::size_t>(seat)];
+  if (e.mode == fp::Mode::Airborne || e.support < 0) return;
+  const std::size_t i = static_cast<std::size_t>(e.support);
+  if (!belt_carries_off(rules, state, i) || (in.buttons & kButtonDown) != 0) return;
+  const int dir = belt_of(rules, state, i) > Fixed::zero() ? 1 : -1;
+  const fp::Rect& r = rules.engine.stage.platforms[i].rect;
+  const Fixed to_end = dir > 0 ? r.right - e.pos.x : e.pos.x - r.left;
+  if (to_end < Fixed::from_int(18) && in.move_x * dir >= 0) in.move_x = static_cast<std::int8_t>(-dir * kAxisMax);
+}
+
 // Falling out: fly towards the stage and use the character's recovery move.
 void recover(const Rules& rules, const State& state, int seat, Bot& bot, Input& in) {
   const fp::EntityState& e = state.world.entities[static_cast<std::size_t>(seat)];
@@ -345,6 +404,8 @@ Input bot_input(const Rules& rules, const State& state, int seat, Bot& bot) {
     in.buttons |= kButtonDown;  // drop to a lower tier
   }
   dodge_hazards(state, seat, bot, in);
+  lean_into_gale(rules, state, seat, bot, in);
+  if (!bot.blind) hold_against_belt(rules, state, seat, in);
   recover(rules, state, seat, bot, in);
   use_kit(rules, state, seat, bot, in);
   return in;
