@@ -25,6 +25,8 @@ final class AppModel: ObservableObject {
     private var onlineTask: Task<Void, Never>?
     private var watch: ReplayWatch?
     private let library = ReplayLibrary.standard
+    /// The online match last played, for a rematch: its setup, and whether this Mac hosted the room.
+    private var lastOnline: (setup: OnlineSetup, hosted: Bool)?
     private var onlineSeating: Seating = {
         var s = Seating()
         s.limit(to: 1)  // one person plays online from this Mac
@@ -74,6 +76,7 @@ final class AppModel: ObservableObject {
         case .hostRoom: hostRoom()
         case .browseRooms: browseRooms()
         case .joinRoom(let id): joinRoom(id)
+        case .rematch: rematch()
         case .listReplays:
             watch = nil
             flow.setReplays(library?.list() ?? [])
@@ -143,9 +146,13 @@ final class AppModel: ObservableObject {
     private func say(_ text: String) async { await MainActor.run { self.flow.setStatus(text) } }
 
     private func hostRoom() {
-        let setup = OnlineSetup(
+        hostRoom(OnlineSetup(
             arena: flow.arena, stocks: flow.stocks, seed: UInt32(truncatingIfNeeded: Int(Date().timeIntervalSince1970 * 1000)),
-            fighters: Array(flow.fighters.prefix(flow.players)), teams: flow.teamMode.teams(players: flow.players))
+            fighters: Array(flow.fighters.prefix(flow.players)), teams: flow.teamMode.teams(players: flow.players)))
+    }
+
+    private func hostRoom(_ setup: OnlineSetup) {
+        lastOnline = (setup, true)
         runOnline { [self] lobby in
             guard try await lobby.gameServers() > 0 else { throw LobbyError("No game server is registered with the lobby") }
             let room = try await lobby.createRoom(setup)
@@ -165,7 +172,42 @@ final class AppModel: ObservableObject {
 
     private func joinRoom(_ id: String) {
         guard let setup = flow.rooms.first(where: { $0.id == id })?.setup else { return }
+        lastOnline = (setup, false)
         runOnline { [self] lobby in try await takeSeatAndWait(lobby, room: id, setup: setup) }
+    }
+
+    /// The same match again: whoever hosted opens a new room with the same setup (and a new seed); the others
+    /// wait for it to appear in the lobby's list and sit down.
+    private func rematch() {
+        let previous = lastOnline
+        dropOnline()
+        guard let previous else {
+            flow.onlineFailed("There is no match to play again")
+            return
+        }
+        lastOnline = previous
+        if previous.hosted {
+            var setup = previous.setup
+            setup.seed = UInt32(truncatingIfNeeded: Int(Date().timeIntervalSince1970 * 1000))
+            hostRoom(setup)
+            return
+        }
+        runOnline { [self] lobby in
+            for _ in 0..<60 {  // up to a minute
+                try Task.checkCancellation()
+                let match = try await lobby.openRooms().first { room in
+                    room.setup.map { $0.arena == previous.setup.arena && $0.stocks == previous.setup.stocks &&
+                        $0.fighters == previous.setup.fighters && $0.teams == previous.setup.teams } ?? false
+                }
+                if let match, let setup = match.setup {
+                    await MainActor.run { self.lastOnline = (setup, false) }
+                    try await takeSeatAndWait(lobby, room: match.id, setup: setup)
+                    return
+                }
+                try await Task.sleep(nanoseconds: 1_000_000_000)
+            }
+            throw LobbyError("Nobody opened a rematch")
+        }
     }
 
     /// Sit down in a room, say we are ready, and wait for the lobby to hand the room to a game server.
