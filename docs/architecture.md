@@ -165,7 +165,8 @@ how a joiner learns the stage and characters) and as the options the server read
 readies, and waits; joining lists the open ledgefall rooms. When the lobby hands the room to a game
 server the app opens an `OnlineSession` (`lf_net_*`: netplay-kit's client session running the core)
 and draws its read-only match view with the same renderer. One person plays online per Mac; the
-pause key leaves. The lobby's address is `LEDGEFALL_LOBBY` or `defaults write ledgefall lobby <url>`.
+pause key leaves. At the results, Return plays again: whoever hosted opens a new room with the
+same setup (a new seed) and the others wait for it to appear in the list, then sit down. The lobby's address is `LEDGEFALL_LOBBY` or `defaults write ledgefall lobby <url>`.
 
 Replays: every finished match is saved (`ReplayLibrary`, `~/Library/Application Support/Ledgefall/Replays/`);
 the setup screen's fourth Mode lists them (newest first, with stage, stocks, characters and length) and
