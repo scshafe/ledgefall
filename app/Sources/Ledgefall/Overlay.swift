@@ -26,11 +26,26 @@ struct OverlayView: View {
 
     private var stocksBar: some View {
         VStack {
-            HStack(spacing: 24) {
+            HStack(alignment: .top, spacing: 24) {
                 ForEach(0..<model.stocks.count, id: \.self) { seat in
-                    HStack(spacing: 6) {
-                        Text("P\(seat + 1)\(model.humans[seat] ? "" : " (bot)")").bold()
-                        Text(model.stocks[seat] > 0 ? String(repeating: "●", count: model.stocks[seat]) : "out")
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 6) {
+                            Text("P\(seat + 1)\(model.humans[seat] ? "" : " (bot)")").bold()
+                            Text(model.stocks[seat] > 0 ? String(repeating: "●", count: model.stocks[seat]) : "out")
+                        }
+                        if seat < model.kits.count {
+                            let kit = model.kits[seat]
+                            Text("\(kit.fighter.name)\(kit.team >= 0 ? " · team \(kit.team == 0 ? "A" : "B")" : "")")
+                                .font(.caption)
+                            HStack(spacing: 8) {
+                                ForEach(0..<3, id: \.self) { slot in
+                                    let left = kit.cooldown[slot]
+                                    Text(left == 0 ? "●" : String(format: "%.1f", Double(left) / 60))
+                                        .font(.caption.monospacedDigit())
+                                        .opacity(left == 0 ? 1 : 0.55)
+                                }
+                            }
+                        }
                     }
                     .foregroundColor(seatColor(seat))
                 }
@@ -45,12 +60,18 @@ struct OverlayView: View {
 
     private var setupPanel: some View {
         let flow = model.flow
-        return VStack(alignment: .leading, spacing: 14) {
+        return VStack(alignment: .leading, spacing: 12) {
             Text("Ledgefall").font(.system(size: 40, weight: .bold))
-            row("Players", value: "\(flow.players)", selected: flow.selectedRow == 0)
-            row("Stocks", value: "\(flow.stocks)", selected: flow.selectedRow == 1)
-            row("Start", value: nil, selected: flow.selectedRow == 2)
-            Text("Arrows or d-pad to choose, Return or A to confirm.\nIn a match: WASD, arrows or IJKL (jump on the top key), or a controller's stick and A, to take a seat from the bots. Esc or B pauses.")
+            row("Players", value: "\(flow.players)", selected: flow.selectedRow == Flow.playersRow)
+            row("Stocks", value: "\(flow.stocks)", selected: flow.selectedRow == Flow.stocksRow)
+            row("Stage", value: flow.arena.name, selected: flow.selectedRow == Flow.stageRow)
+            row("Teams", value: flow.teamMode.name, selected: flow.selectedRow == Flow.teamsRow)
+            ForEach(0..<flow.players, id: \.self) { seat in
+                row("Seat \(seat + 1)", value: flow.fighters[seat].name, selected: flow.selectedRow == Flow.firstSeatRow + seat)
+                    .foregroundColor(seatColor(seat))
+            }
+            row("Start", value: nil, selected: flow.selectedRow == flow.startRow)
+            Text("Arrows or d-pad to choose, Return or A to confirm.\nIn a match: WASD, arrows or IJKL (jump on the top key; Q E R, . / right shift, or U O P are the three moves), or a controller (A jump, X, B, Y the moves), to take a seat from the bots. Esc or the menu button pauses.")
                 .font(.footnote)
                 .foregroundColor(.secondary)
         }
@@ -72,7 +93,7 @@ struct OverlayView: View {
 
     private func resultsPanel(_ winner: Int?) -> some View {
         panel(title: winner.map { "P\($0 + 1) wins" } ?? "No winner",
-              lines: ["Return / A: rematch", "Esc / B: setup"])
+              lines: ["Return / A: rematch", "Esc / B: setup", "(the replay is saved in Application Support/Ledgefall/Replays)"])
     }
 
     private func panel(title: String, lines: [String]) -> some View {

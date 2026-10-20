@@ -142,6 +142,11 @@ runs the XCTests; nothing in CI opens the window.
   compiled from source at start-up, SwiftUI screens over it, and
   GameController.framework for Xbox and other extended gamepads.
 
+The setup screen picks players, stocks, the stage, teams (off, 1+3 vs 2+4,
+1+2 vs 3+4) and a character for each seat; the HUD shows each seat's character,
+team and move cooldowns; a finished match's replay is saved to
+`~/Library/Application Support/Ledgefall/Replays/` (no watching UI yet).
+
 Not built yet: rebinding, dead-zone settings, per-seat device menus, sound,
 character art, interpolation between ticks. Bots are the footing bot only (see
 `include/ledgefall/bot.hpp`).

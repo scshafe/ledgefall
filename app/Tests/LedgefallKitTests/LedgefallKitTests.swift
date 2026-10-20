@@ -235,28 +235,81 @@ final class SeatingTests: XCTestCase {
 }
 
 final class FlowTests: XCTestCase {
+    /// Move the cursor to a setup row.
+    private func go(_ flow: inout Flow, to row: Int) {
+        while flow.selectedRow > row { flow.handle(.up) }
+        while flow.selectedRow < row { flow.handle(.down) }
+    }
+
     func testSetupDefaultsAndLimits() {
         var flow = Flow()
         XCTAssertEqual(flow.phase, .setup)
         XCTAssertEqual(flow.stocks, 3)
         XCTAssertEqual(flow.players, 2)
-        flow.handle(.up); flow.handle(.up); flow.handle(.up)  // row 0, clamped
+        XCTAssertEqual(flow.arena, .yard)
+        XCTAssertEqual(flow.teamMode, .off)
+        XCTAssertEqual(flow.selectedRow, flow.startRow)
+        go(&flow, to: Flow.playersRow)
+        flow.handle(.up)  // clamped
         for _ in 0..<5 { flow.handle(.right) }
         XCTAssertEqual(flow.players, 4)
+        XCTAssertEqual(flow.rows, Flow.firstSeatRow + 4 + 1)
         for _ in 0..<5 { flow.handle(.left) }
         XCTAssertEqual(flow.players, 2)
-        flow.handle(.down)
+        go(&flow, to: Flow.stocksRow)
         for _ in 0..<9 { flow.handle(.right) }
         XCTAssertEqual(flow.stocks, 5)
         for _ in 0..<9 { flow.handle(.left) }
         XCTAssertEqual(flow.stocks, 1)
     }
 
+    func testStageTeamsAndFightersCycle() {
+        var flow = Flow()
+        go(&flow, to: Flow.stageRow)
+        flow.handle(.right)
+        XCTAssertEqual(flow.arena, .quarry)
+        for _ in 0..<Arena.allCases.count { flow.handle(.left) }  // all the way round
+        XCTAssertEqual(flow.arena, .quarry)
+        go(&flow, to: Flow.teamsRow)
+        flow.handle(.right)
+        XCTAssertEqual(flow.teamMode, .alternating)
+        flow.handle(.left)
+        flow.handle(.left)
+        XCTAssertEqual(flow.teamMode, .halves)  // wraps
+        go(&flow, to: Flow.firstSeatRow + 1)
+        flow.handle(.right)
+        XCTAssertEqual(flow.fighters[1], .pip)  // after Glim
+        flow.handle(.left)
+        flow.handle(.left)
+        XCTAssertEqual(flow.fighters[1], .mason)
+        flow.handle(.left)
+        XCTAssertEqual(flow.fighters[1], .ferro)  // wraps
+        go(&flow, to: Flow.firstSeatRow + 1)
+        XCTAssertEqual(flow.fighters[0], .mason)  // the other seats are untouched
+    }
+
+    func testSeatRowsOnlyForTheSeatsInTheMatch() {
+        var flow = Flow()
+        XCTAssertEqual(flow.rows, Flow.firstSeatRow + 2 + 1)
+        // With two players the row after the second seat is Start, not a third seat.
+        go(&flow, to: Flow.firstSeatRow + 1)
+        flow.handle(.down)
+        XCTAssertEqual(flow.selectedRow, flow.startRow)
+    }
+
+    func testTeamModes() {
+        XCTAssertEqual(TeamMode.off.teams(players: 3), [nil, nil, nil])
+        XCTAssertEqual(TeamMode.alternating.teams(players: 4), [0, 1, 0, 1])
+        XCTAssertEqual(TeamMode.halves.teams(players: 4), [0, 0, 1, 1])
+        XCTAssertEqual(TeamMode.halves.teams(players: 3), [0, 0, 1])
+        XCTAssertEqual(TeamMode.halves.teams(players: 2), [0, 1])
+    }
+
     func testConfirmWalksDownToStart() {
         var flow = Flow()
-        flow.handle(.up); flow.handle(.up)
-        XCTAssertNil(flow.handle(.confirm))  // players row -> stocks row
-        XCTAssertNil(flow.handle(.confirm))  // stocks row -> start
+        go(&flow, to: Flow.firstSeatRow + 1)
+        XCTAssertNil(flow.handle(.confirm))  // the last seat -> start
+        XCTAssertEqual(flow.selectedRow, flow.startRow)
         XCTAssertEqual(flow.handle(.confirm), .startMatch)
         XCTAssertEqual(flow.phase, .playing)
     }

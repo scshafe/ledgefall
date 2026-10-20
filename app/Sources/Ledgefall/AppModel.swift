@@ -1,4 +1,5 @@
 import Combine
+import Foundation
 import LedgefallKit
 
 /// Ties the pieces together: the flow of screens, the current match, the
@@ -8,6 +9,8 @@ final class AppModel: ObservableObject {
     /// Per seat of the current match: stocks left, and whether a person (not a bot) holds the seat.
     @Published private(set) var stocks: [Int] = []
     @Published private(set) var humans: [Bool] = []
+    /// Per seat: the fighter, and the ticks until each move can be cast again.
+    @Published private(set) var kits: [SeatKit] = []
 
     private(set) var loop: GameLoop
     private var seating = Seating()
@@ -47,7 +50,10 @@ final class AppModel: ObservableObject {
     }
 
     private func startMatch() {
-        guard let match = Match(players: flow.players, stocks: flow.stocks, arena: .yard) else { return }
+        guard let match = Match(
+            players: flow.players, stocks: flow.stocks, seed: UInt32(truncatingIfNeeded: Int(Date().timeIntervalSince1970 * 1000)),
+            characters: Array(flow.fighters.prefix(flow.players)), arena: flow.arena,
+            teams: flow.teamMode.teams(players: flow.players)) else { return }
         for seat in 0..<flow.players { match.setBot(seat: seat, level: .normal) }
         seating.limit(to: flow.players)
         // Devices that kept their seats stay people.
@@ -81,11 +87,28 @@ final class AppModel: ObservableObject {
                 for seat in update.left { match.setBot(seat: seat, level: .normal) }
                 return update.inputs
             }
-            if match.isOver { flow.matchOver(winner: match.winner) }
+            if match.isOver {
+                flow.matchOver(winner: match.winner)
+                saveReplay(of: match)
+            }
         case .paused, .results:
             loop.idle(to: now)  // no ticks run, but the clock stays current so resuming does not lurch
         }
         publish()
+    }
+
+    /// Keep the match just played: ~/Library/Application Support/Ledgefall/Replays/<time>.lfreplay. Best effort.
+    private func saveReplay(of match: Match) {
+        guard let data = match.replayData(),
+              let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return }
+        let folder = base.appendingPathComponent("Ledgefall/Replays", isDirectory: true)
+        let stamp = Int(Date().timeIntervalSince1970)
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try data.write(to: folder.appendingPathComponent("\(stamp).lfreplay"))
+        } catch {
+            NSLog("ledgefall: could not save the replay: \(error)")
+        }
     }
 
     private func publish() {
@@ -94,5 +117,16 @@ final class AppModel: ObservableObject {
         let newHumans = (0..<match.players).map { seating.devices[$0] != nil && flow.phase != .setup }
         if newStocks != stocks { stocks = newStocks }
         if newHumans != humans { humans = newHumans }
+        let newKits = (0..<match.players).map { seat -> SeatKit in
+            let p = match.player(seat)
+            return SeatKit(fighter: p.character, cooldown: p.cooldown, team: p.team)
+        }
+        if newKits != kits { kits = newKits }
     }
+}
+
+struct SeatKit: Equatable {
+    var fighter: Fighter
+    var cooldown: [Int]
+    var team: Int
 }
