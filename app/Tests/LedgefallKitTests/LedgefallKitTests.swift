@@ -340,8 +340,8 @@ final class FlowTests: XCTestCase {
         XCTAssertEqual(flow.phase, .browsing)
         XCTAssertNil(flow.handle(.confirm))  // no rooms yet: nothing to join
         let setup = OnlineSetup(arena: .yard, stocks: 3, seed: 1, fighters: [.mason, .glim], teams: [nil, nil])
-        let a = LobbyRoom(id: "a", name: setup.roomName, state: "open", seatCount: 2, taken: 1)
-        let b = LobbyRoom(id: "b", name: setup.roomName, state: "open", seatCount: 2, taken: 0)
+        let a = LobbyRoom(id: "a", name: setup.roomTitle, state: "open", seatCount: 2, taken: 1)
+        let b = LobbyRoom(id: "b", name: setup.roomTitle, state: "open", seatCount: 2, taken: 0)
         flow.setRooms([a, b])
         flow.handle(.down)
         flow.handle(.down)  // clamped
@@ -482,21 +482,36 @@ final class SeatingCapacityTests: XCTestCase {
 }
 
 final class OnlineSetupTests: XCTestCase {
-    func testRoomNameRoundTrips() throws {
+    func testOptionsRoundTrip() throws {
         let setup = OnlineSetup(arena: .tide, stocks: 4, seed: 4_000_000_001, fighters: [.ferro, .mason, .dab], teams: [0, nil, 1])
-        XCTAssertEqual(setup.roomName, "lf1 S3 K4 D4000000001 C604 T0n1")
-        XCTAssertLessThanOrEqual(setup.roomName.count, 40)  // the lobby's limit for a room name
-        XCTAssertEqual(OnlineSetup(roomName: setup.roomName), setup)
+        // As the lobby hands them back: through JSON.
+        let json = try JSONSerialization.data(withJSONObject: setup.options)
+        let back = try XCTUnwrap(JSONSerialization.jsonObject(with: json) as? [String: Any])
+        XCTAssertEqual(OnlineSetup(options: back), setup)
         let widest = OnlineSetup(arena: .belts, stocks: 5, seed: UInt32.max, fighters: [.ferro, .ferro, .ferro, .ferro], teams: [0, 1, 0, 1])
-        XCTAssertLessThanOrEqual(widest.roomName.count, 40)
-        XCTAssertEqual(OnlineSetup(roomName: widest.roomName), widest)
+        XCTAssertEqual(OnlineSetup(options: widest.options), widest)
+        XCTAssertLessThanOrEqual(widest.roomTitle.count, 40)  // the lobby's limit for a room name
+        XCTAssertEqual(setup.roomTitle, "Tide Pools, 4 stocks")
     }
 
-    func testRoomNamesThatAreNotOurs() {
-        for name in ["", "my game", "lf1 S1 K3 D1 C0 T0", "lf1 S9 K3 D1 C01 Tnn", "lf1 S1 K0 D1 C01 Tnn", "lf1 S1 K3 D1 C01 Tn",
-                     "lf1 S1 K3 D1 C09 Tnn", "lf1 S1 K3 D-1 C01 Tnn", "lf1 S1 K3 D1 C01 Tn2", "lf2 S1 K3 D1 C01 Tnn", "lf1 S1 K3 D1 C01234 Tnnnnn"] {
-            XCTAssertNil(OnlineSetup(roomName: name), name)
-        }
+    func testOptionsThatAreNotOurs() {
+        let good = OnlineSetup(arena: .yard, stocks: 3, seed: 1, fighters: [.mason, .glim], teams: [nil, nil]).options
+        XCTAssertNotNil(OnlineSetup(options: good))
+        XCTAssertNil(OnlineSetup(options: [:]))  // a room made without options
+        func without(_ key: String) -> [String: Any] { var o = good; o[key] = nil; return o }
+        for key in ["stage", "stocks", "seed", "characters", "teams"] { XCTAssertNil(OnlineSetup(options: without(key)), key) }
+        func with(_ key: String, _ value: Any) -> [String: Any] { var o = good; o[key] = value; return o }
+        XCTAssertNil(OnlineSetup(options: with("stage", 99)))
+        XCTAssertNil(OnlineSetup(options: with("stocks", 0)))
+        XCTAssertNil(OnlineSetup(options: with("stocks", 6)))
+        XCTAssertNil(OnlineSetup(options: with("seed", -1)))
+        XCTAssertNil(OnlineSetup(options: with("seed", 4_294_967_296)))
+        XCTAssertNil(OnlineSetup(options: with("stocks", 2.5)))
+        XCTAssertNil(OnlineSetup(options: with("characters", [0])))        // one seat
+        XCTAssertNil(OnlineSetup(options: with("characters", [0, 99])))    // no such fighter
+        XCTAssertNil(OnlineSetup(options: with("teams", [-1])))            // one team entry for two seats
+        XCTAssertNil(OnlineSetup(options: with("teams", [-1, 2])))
+        XCTAssertNil(OnlineSetup(options: with("stage", "1")))
     }
 
     func testOptionsForTheServer() throws {
@@ -547,7 +562,7 @@ final class LobbyClientTests: XCTestCase {
         // What was sent: the game, the seat count, the setup in the name and as options; the secret as a bearer.
         XCTAssertEqual(t.seen[0].body?["game"] as? String, "ledgefall")
         XCTAssertEqual(t.seen[0].body?["seats"] as? Int, 2)
-        XCTAssertEqual(t.seen[0].body?["name"] as? String, setup.roomName)
+        XCTAssertEqual(t.seen[0].body?["name"] as? String, setup.roomTitle)
         XCTAssertEqual((t.seen[0].body?["options"] as? [String: Any])?["stage"] as? Int, 1)
         XCTAssertEqual(t.seen[1].body?["name"] as? String, "Cole")
         XCTAssertNil(t.seen[1].bearer)
@@ -557,11 +572,13 @@ final class LobbyClientTests: XCTestCase {
 
     func testBrowsingOnlyLedgefallRoomsThatAreOpen() async throws {
         let t = ScriptedTransport()
+        let options = String(decoding: try JSONSerialization.data(withJSONObject: setup.options), as: UTF8.self)
         t.answers["GET /api/rooms"] = (200, """
             {"rooms":[
-              {"id":"a","name":"\(setup.roomName)","state":"open","seat_count":2,"taken":1},
-              {"id":"b","name":"\(setup.roomName)","state":"playing","seat_count":2,"taken":2},
-              {"id":"c","name":"someone's toy game","state":"open","seat_count":2,"taken":0}]}
+              {"id":"a","name":"\(setup.roomTitle)","state":"open","seat_count":2,"taken":1,"options":\(options)},
+              {"id":"b","name":"\(setup.roomTitle)","state":"playing","seat_count":2,"taken":2,"options":\(options)},
+              {"id":"c","name":"someone's toy game","state":"open","seat_count":2,"taken":0,"options":{}},
+              {"id":"d","name":"no options at all","state":"open","seat_count":2,"taken":0}]}
             """)
         t.answers["GET /api/status"] = (200, "{\"rooms\":3,\"game_servers\":1}")
         let client = lobby(t)

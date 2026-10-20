@@ -5,7 +5,8 @@
 //
 //   ledgefall_bot --lobby HOST:PORT --room NAME [--create SEATS] [--stocks N] [--stage N]
 //                 [--name BOT] [--timeout SECONDS]
-// (--stocks and --stage must be the same for every bot of a room.)
+// (--stocks and --stage are the options of a room this bot creates; a bot that joins reads the
+// room's options from the lobby.)
 //
 // Prints "RESULT outcome=<outcome> frames=<n> winner=<seat>" and exits 0 if the match completed.
 
@@ -149,12 +150,12 @@ int main(int argc, char** argv) {
     if (expired()) fail("the match did not start");
     nap(200);
   }
+  // The room's seats and its options, which the lobby keeps with it: the same ones the server made its game from.
   std::int64_t seats = 0;
-  if (auto [st, v] = lobby.call("GET", path); st == 200) seats = *v.find("seat_count")->as_int();
-  // The lobby does not show a room's options to its players (a netplay-kit gap: a client needs them
-  // to make the same game the server did), so every bot is told them on its command line.
-  options.set("stocks", static_cast<std::int64_t>(a.stocks));
-  options.set("stage", static_cast<std::int64_t>(a.stage));
+  if (auto [st, v] = lobby.call("GET", path); st == 200) {
+    seats = *v.find("seat_count")->as_int();
+    if (const json::Value* o = v.find("options")) options = *o;
+  }
 
   // Play.
   const auto server_hp = http::parse_host_port(udp, 0);
@@ -163,7 +164,6 @@ int main(int argc, char** argv) {
   std::string err;
   auto sock = transport::UdpSocket::bind(server->is_v4() ? transport::Address::any_v4(0) : transport::Address::any_v6(0), &err);
   if (!sock) fail("cannot open a UDP socket");
-  // The same options the server got: the lobby keeps them with the room.
   auto game = ledgefall::make_netplay_simulation(static_cast<std::size_t>(seats), options);
   if (!game) fail("cannot make the game from the room's options");
   session::ClientSessionConfig cc;

@@ -38,7 +38,7 @@ sleep 0.5
 room="e2e-$RANDOM"
 "$build/ledgefall_bot" --lobby 127.0.0.1:$lobby_port --room "$room" --create 2 --stocks 1 --stage 0 --name alice --timeout 120 >"$work/alice.out" 2>&1 & a=$!
 sleep 1
-"$build/ledgefall_bot" --lobby 127.0.0.1:$lobby_port --room "$room" --stocks 1 --stage 0 --name bob --timeout 120 >"$work/bob.out" 2>&1 & b=$!
+"$build/ledgefall_bot" --lobby 127.0.0.1:$lobby_port --room "$room" --name bob --timeout 120 >"$work/bob.out" 2>&1 & b=$!
 
 status=0
 wait "$a" || status=1

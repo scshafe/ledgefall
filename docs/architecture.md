@@ -166,8 +166,9 @@ team and move cooldowns; a finished match's replay is saved to
 
 Online play (milestone 3, app side): the setup screen's Mode row chooses local, host or
 join. Hosting makes a room through the lobby (`LobbyClient`, URLSession) with the setup in the
-room's name (`OnlineSetup`: until the lobby shows a room's options to its players, the name is
-how a joiner learns the stage and characters) and as the options the server reads, takes a seat,
+room's options (`OnlineSetup`: stage, stocks, seed, characters, teams; netplay-kit's lobby keeps them
+with the room, the server builds its game from them, and a joiner reads them from the room list; the room's
+name is only a title like "Crumble Yard, 3 stocks"), takes a seat,
 readies, and waits; joining lists the open ledgefall rooms. When the lobby hands the room to a game
 server the app opens an `OnlineSession` (`lf_net_*`: netplay-kit's client session running the core)
 and draws its read-only match view with the same renderer. Several people can play online from one Mac (the
