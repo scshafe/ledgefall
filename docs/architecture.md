@@ -179,6 +179,13 @@ the setup screen's fourth Mode lists them (newest first, with stage, stocks, cha
 `ReplayWatch` plays one back through the same renderer, stepping the recorded inputs; Return pauses, Esc
 leaves.
 
+Online matches are kept too. A client's simulation writes down the inputs of every frame it steps (a rollback
+steps a frame again, and the latest stepping stands), and `OnlineMatch::replay()` hands them over once the match
+is over *and* the session has confirmed every frame of it, since until then some inputs are guesses. The replay
+is checked by playing it again (a resync leaves frames this client never stepped, and such a match is not
+kept). The app asks at the results screen, twice a second, through the same `lf_match_replay_*` calls the
+local replay uses; the file is the server's canonical input, the same on every client.
+
 Not built yet: rebinding, dead-zone settings, per-seat device menus, sound,
 character art, interpolation between ticks. Bots are the footing bot only (see
 `include/ledgefall/bot.hpp`).

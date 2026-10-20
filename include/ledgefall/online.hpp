@@ -34,6 +34,8 @@ class OnlineMatch {
   State state() const;
   int seat() const { return session_.player(); }
   const NetplaySimulation& simulation() const { return sim_; }
+  // The finished match as a replay, once the session has confirmed every frame of it; nothing before.
+  std::optional<Replay> replay() const;
   const npk::session::ClientSession& session() const { return session_; }
 
  private:

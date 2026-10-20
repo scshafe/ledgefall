@@ -99,6 +99,69 @@ void test_clients_play_and_agree_with_the_server() {
   CHECK(checked >= 2 * 5);
 }
 
+// A match played to its end over a lossy network: each client's replay is the server's canonical inputs,
+// and nobody has one before the match is over and confirmed.
+void test_clients_keep_a_replay_of_the_match() {
+  npk::transport::SimNetwork net(8);
+  net.set_default_conditions({.drop = 0.05, .delay = 25 * ms, .jitter = 10 * ms});
+  const Address server_addr = Address::v4(10, 0, 0, 1, 7000);
+  auto server_link = net.make_link(server_addr);
+  Setup su;
+  su.players = 2;
+  su.stocks = 1;
+  su.seed = 11;
+  su.stage = StageId::Yard;
+  su.characters = {Character::Mason, Character::Glim, Character::Mason, Character::Mason};
+  NetplaySimulation server_game(*make_rules(su));
+  std::vector<std::uint8_t> canonical;
+  npk::session::ServerSessionConfig sc;
+  sc.transport.seed = 6;
+  sc.match.on_canonical = [&](Frame, std::span<const std::uint8_t> in) { canonical.insert(canonical.end(), in.begin(), in.end()); };
+  npk::session::ServerSession server(*server_link, server_game, sc);
+
+  std::vector<std::unique_ptr<npk::transport::SimLink>> links;
+  std::vector<std::unique_ptr<OnlineMatch>> clients;
+  for (int i = 0; i < 2; ++i) {
+    links.push_back(net.make_link(Address::v4(10, 1, 0, static_cast<std::uint8_t>(i + 1), 5000)));
+    clients.push_back(std::make_unique<OnlineMatch>(*links.back(), server_addr, *make_rules(su)));
+    clients.back()->connect(net.now());
+  }
+  bool early = false;
+  for (Micros t = 0; t < 120000 * ms; t += ms) {
+    for (std::size_t i = 0; i < clients.size(); ++i) {
+      const long wall = static_cast<long>(t / (16 * ms));
+      // One player wanders; the other stands still on tiles that crumble.
+      if (i == 0) clients[i]->set_input({static_cast<std::int8_t>((wall / 25) % 2 == 0 ? 100 : -100), static_cast<std::uint8_t>(wall % 50 == 0 ? kButtonJump : 0)});
+      clients[i]->update(net.now());
+      early = early || (!clients[i]->simulation().state().over && clients[i]->replay().has_value());
+    }
+    server.update(net.now());
+    net.advance(ms);
+    if (server_game.finished() && clients[0]->replay() && clients[1]->replay()) break;
+  }
+  CHECK(!early);  // nothing to save while the match is still being played
+  CHECK(server_game.finished());
+  const std::size_t per_frame = 2 * kInputBytes;
+  for (const auto& c : clients) {
+    const auto r = c->replay();
+    CHECK(r.has_value());
+    if (!r) continue;
+    CHECK(verify(*r));
+    CHECK(r->ticks == server_game.state().world.frame && r->final_hash == server_game.hash());
+    // Every tick's inputs are the server's canonical ones.
+    bool same = r->ticks > 0 && canonical.size() >= static_cast<std::size_t>(r->ticks) * per_frame;
+    for (std::uint32_t f = 0; same && f < r->ticks; ++f) {
+      for (std::size_t seat = 0; seat < 2; ++seat) {
+        Input want;
+        decode(std::span(canonical).subspan(f * per_frame + seat * kInputBytes, kInputBytes), want);
+        const Input& got = r->tick_inputs(f)[seat];
+        same = same && got.move_x == want.move_x && got.buttons == want.buttons;
+      }
+    }
+    CHECK(same);
+  }
+}
+
 // The C face over a real socket: the server session on the loopback, two lf_net clients.
 void test_the_c_face_over_udp() {
   lf_setup su{};
@@ -151,6 +214,7 @@ void test_the_c_face_over_udp() {
 
   const lf_match* view = lf_net_view(a);
   CHECK(view != nullptr && lf_match_players(view) == 2 && lf_match_tick(view) > 100);
+  CHECK(lf_match_over(view) == 0 && lf_match_replay_size(view) == 0);  // no replay of a match still being played
   lf_entity e;
   CHECK(lf_match_entity(view, 0, &e) && e.height > 0);
   CHECK(lf_match_platform_count(view) > 20);  // the Yard
@@ -175,6 +239,7 @@ void test_the_c_face_over_udp() {
 int main() {
   test_join_tokens();
   test_clients_play_and_agree_with_the_server();
+  test_clients_keep_a_replay_of_the_match();
   test_the_c_face_over_udp();
   return test::finish();
 }

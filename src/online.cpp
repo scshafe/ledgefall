@@ -17,6 +17,11 @@ void OnlineMatch::connect(npk::transport::Micros now) { session_.connect(now); }
 void OnlineMatch::update(npk::transport::Micros now) { session_.update(now); }
 void OnlineMatch::disconnect() { session_.disconnect(); }
 
+std::optional<Replay> OnlineMatch::replay() const {
+  if (session_.rollback().confirmed() < sim_.state().world.frame) return std::nullopt;  // some of it is still a guess
+  return sim_.replay();
+}
+
 OnlineMatch::State OnlineMatch::state() const {
   using S = npk::session::ClientSession::State;
   switch (session_.state()) {

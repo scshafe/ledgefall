@@ -86,9 +86,11 @@ lf_net* lf_net_open(const lf_setup* in, const char* server, const char* room, co
   if (n == nullptr) return nullptr;
   n->socket = std::move(socket);
   n->match = std::make_unique<OnlineMatch>(*n->socket, *address, std::move(*rules), std::move(join));
-  n->view = std::make_unique<lf_match>(lf_match{ledgefall::Rules{}, ledgefall::Recorder(ledgefall::Setup{}), ledgefall::State{}, {}, {}, {}, nullptr, nullptr});
+  n->view = std::make_unique<lf_match>(lf_match{ledgefall::Rules{}, ledgefall::Recorder(ledgefall::Setup{}), ledgefall::State{}, {}, {}, {}, nullptr, nullptr, {}});
   n->view->view_rules = &n->match->simulation().rules();
   n->view->view_state = &n->match->simulation().state();
+  OnlineMatch* online = n->match.get();
+  n->view->view_replay = [online] { return online->replay(); };
   n->match->connect(now_us());
   return n;
 }
