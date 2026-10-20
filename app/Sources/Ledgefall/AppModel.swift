@@ -13,6 +13,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var kits: [SeatKit] = []
     /// Online: this client's seat, once the match is on.
     @Published private(set) var localSeat: Int?
+    /// Watching a replay: ticks played and in all.
+    @Published private(set) var watchTicks: (played: Int, total: Int)?
     /// The lobby's address, from the LEDGEFALL_LOBBY environment variable or `defaults write <app> lobby <url>`.
     let lobbyAddress: String? = AppModel.configuredLobby()
 
@@ -21,6 +23,8 @@ final class AppModel: ObservableObject {
     private var session: OnlineSession?
     private var sessionStarted: Double?
     private var onlineTask: Task<Void, Never>?
+    private var watch: ReplayWatch?
+    private let library = ReplayLibrary.standard
     private var onlineSeating: Seating = {
         var s = Seating()
         s.limit(to: 1)  // one person plays online from this Mac
@@ -38,7 +42,7 @@ final class AppModel: ObservableObject {
     }
 
     /// What is drawn: the online match while one is on, else the local one.
-    var displayMatch: Match { (flow.online ? session?.match : nil) ?? loop.match }
+    var displayMatch: Match { (flow.online ? session?.match : nil) ?? (flow.phase == .watching ? watch?.match : nil) ?? loop.match }
 
     private static func configuredLobby() -> String? {
         let text = ProcessInfo.processInfo.environment["LEDGEFALL_LOBBY"] ?? UserDefaults.standard.string(forKey: "lobby")
@@ -70,6 +74,19 @@ final class AppModel: ObservableObject {
         case .hostRoom: hostRoom()
         case .browseRooms: browseRooms()
         case .joinRoom(let id): joinRoom(id)
+        case .listReplays:
+            watch = nil
+            flow.setReplays(library?.list() ?? [])
+        case .watchReplay(let index):
+            if let info = flow.replays.indices.contains(index) ? flow.replays[index] : nil,
+               let replay = library?.load(info), let w = ReplayWatch(replay) {
+                watch = w
+            } else {
+                handle(.back)  // unreadable now: back to the list
+            }
+        case .stopWatching:
+            watch = nil
+            loop = GameLoop(match: AppModel.demoMatch())
         case .leaveOnline:
             dropOnline()
             loop = GameLoop(match: AppModel.demoMatch())
@@ -194,8 +211,13 @@ final class AppModel: ObservableObject {
         previousPads = pads
 
         switch flow.phase {
-        case .browsing:
+        case .browsing, .replays:
             loop.advance(to: now) { [] }  // the demo plays on behind the list
+        case .watching:
+            if let watch {
+                watch.paused = flow.watchPaused
+                watch.advance(to: now)
+            }
         case .connecting:
             loop.advance(to: now) { [] }
             if let session {
@@ -248,15 +270,11 @@ final class AppModel: ObservableObject {
         publish()
     }
 
-    /// Keep the match just played: ~/Library/Application Support/Ledgefall/Replays/<time>.lfreplay. Best effort.
+    /// Keep the match just played in the replay library. Best effort.
     private func saveReplay(of match: Match) {
-        guard let data = match.replayData(),
-              let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return }
-        let folder = base.appendingPathComponent("Ledgefall/Replays", isDirectory: true)
-        let stamp = Int(Date().timeIntervalSince1970)
+        guard let data = match.replayData(), let library else { return }
         do {
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            try data.write(to: folder.appendingPathComponent("\(stamp).lfreplay"))
+            try library.save(data)
         } catch {
             NSLog("ledgefall: could not save the replay: \(error)")
         }
@@ -264,6 +282,8 @@ final class AppModel: ObservableObject {
 
     private func publish() {
         let match = displayMatch
+        let newWatch = flow.phase == .watching ? watch.map { (played: $0.match.tick, total: $0.replay.ticks) } : nil
+        if newWatch?.played != watchTicks?.played || newWatch?.total != watchTicks?.total { watchTicks = newWatch }
         let newStocks = (0..<match.players).map { match.player($0).stocks }
         let newHumans = (0..<match.players).map { flow.online || (seating.devices[$0] != nil && flow.phase != .setup) }
         if newStocks != stocks { stocks = newStocks }

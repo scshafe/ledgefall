@@ -151,7 +151,7 @@ runs the XCTests; nothing in CI opens the window.
 The setup screen picks players, stocks, the stage, teams (off, 1+3 vs 2+4,
 1+2 vs 3+4) and a character for each seat; the HUD shows each seat's character,
 team and move cooldowns; a finished match's replay is saved to
-`~/Library/Application Support/Ledgefall/Replays/` (no watching UI yet).
+`~/Library/Application Support/Ledgefall/Replays/` .
 
 Online play (milestone 3, app side): the setup screen's Mode row chooses local, host or
 join. Hosting makes a room through the lobby (`LobbyClient`, URLSession) with the setup in the
@@ -161,6 +161,11 @@ readies, and waits; joining lists the open ledgefall rooms. When the lobby hands
 server the app opens an `OnlineSession` (`lf_net_*`: netplay-kit's client session running the core)
 and draws its read-only match view with the same renderer. One person plays online per Mac; the
 pause key leaves. The lobby's address is `LEDGEFALL_LOBBY` or `defaults write ledgefall lobby <url>`.
+
+Replays: every finished match is saved (`ReplayLibrary`, `~/Library/Application Support/Ledgefall/Replays/`);
+the setup screen's fourth Mode lists them (newest first, with stage, stocks, characters and length) and
+`ReplayWatch` plays one back through the same renderer, stepping the recorded inputs; Return pauses, Esc
+leaves.
 
 Not built yet: rebinding, dead-zone settings, per-seat device menus, sound,
 character art, interpolation between ticks. Bots are the footing bot only (see

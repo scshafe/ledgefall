@@ -272,6 +272,8 @@ public final class Replay {
     private let handle: OpaquePointer
     public let players: Int
     public let ticks: Int
+    /// What the match was: stage, stocks, seed, characters, teams.
+    public let setup: OnlineSetup
 
     /// Nil if the bytes are not a well-formed replay.
     public init?(data: Data) {
@@ -282,6 +284,12 @@ public final class Replay {
         lf_replay_setup(h, &setup)
         players = Int(setup.players)
         ticks = Int(lf_replay_ticks(h))
+        let t = [setup.teams.0, setup.teams.1, setup.teams.2, setup.teams.3]
+        let f = [setup.characters.0, setup.characters.1, setup.characters.2, setup.characters.3]
+        self.setup = OnlineSetup(
+            arena: Arena(rawValue: Int(setup.stage)) ?? .practice, stocks: Int(setup.stocks), seed: setup.seed,
+            fighters: f.prefix(players).map { Fighter(rawValue: Int($0)) ?? .mason },
+            teams: t.prefix(players).map { $0 >= 0 ? Int($0) : nil })
     }
 
     deinit { lf_replay_close(handle) }
