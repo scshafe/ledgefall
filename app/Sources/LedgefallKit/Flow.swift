@@ -13,6 +13,7 @@ public enum Phase: Equatable {
     case connecting  // online: opening or joining a room, and waiting for the match to start
     case replays     // choosing a saved replay
     case watching    // watching one
+    case controls    // changing the keys
 }
 
 /// What the host must do after a menu action.
@@ -27,13 +28,16 @@ public enum FlowEffect: Equatable {
     case listReplays // read the saved replays into the list
     case watchReplay(Int) // watch the replay at this index of the list
     case stopWatching     // back to the setup screen
+    case bindingsChanged  // the keys were changed: save them and use them
 }
 
 /// Where a match is played.
 public enum PlayMode: Int, CaseIterable, Equatable {
-    case local, host, join, replay
+    case local, host, join, replay, controls
 
-    public var name: String { ["Local, against bots and friends", "Online: host a room", "Online: join a room", "Watch a saved replay"][rawValue] }
+    public var name: String {
+        ["Local, against bots and friends", "Online: host a room", "Online: join a room", "Watch a saved replay", "Change the keys"][rawValue]
+    }
 }
 
 /// How the seats are split into teams (a match needs two sides; teams of one seat each is "off").
@@ -74,6 +78,11 @@ public struct Flow: Equatable {
     public private(set) var replays: [ReplayInfo] = []
     public private(set) var replayIndex = 0
     public private(set) var watchPaused = false
+    /// The keys, the cluster and the row being changed (the actions, then "reset"), and whether the next key press is the new key.
+    public private(set) var bindings = KeyBindings.standard
+    public private(set) var controlsCluster = 0
+    public private(set) var controlsRow = 0
+    public private(set) var capturing = false
     public private(set) var players = 2
     /// Online: how many people play from this Mac, each in a seat of their own (1...4, never more than the room's seats).
     public private(set) var localPlayers = 1
@@ -119,6 +128,11 @@ public struct Flow: Equatable {
                         replays = []
                         replayIndex = 0
                         return .listReplays
+                    case .controls:
+                        phase = .controls
+                        controlsRow = 0
+                        capturing = false
+                        return nil
                     }
                 }
                 selectedRow += 1
@@ -197,6 +211,27 @@ public struct Flow: Equatable {
                 return .listReplays
             default: break
             }
+        case .controls:
+            if capturing {  // the next key is the answer; only "back" (a controller's B) cancels here
+                if action == .back { capturing = false }
+                return nil
+            }
+            let clusters = bindings.layouts.count
+            switch action {
+            case .up: controlsRow = max(controlsRow - 1, 0)
+            case .down: controlsRow = min(controlsRow + 1, KeyAction.allCases.count)
+            case .left: controlsCluster = (controlsCluster + clusters - 1) % clusters
+            case .right: controlsCluster = (controlsCluster + 1) % clusters
+            case .confirm:
+                if controlsRow < KeyAction.allCases.count {
+                    capturing = true
+                } else {
+                    bindings.reset()
+                    return .bindingsChanged
+                }
+            case .back: phase = .setup
+            case .pause: break
+            }
         case .connecting:
             if action == .back || (action == .confirm && failed) {
                 leaveOnline()
@@ -205,6 +240,21 @@ public struct Flow: Equatable {
         }
         return nil
     }
+
+    /// Whether the next key press is for the controls screen to take (and not a menu key).
+    public var capturingKey: Bool { phase == .controls && capturing }
+
+    /// A key press while `capturingKey`: it becomes the key of the chosen action, unless it is Esc, which cancels.
+    @discardableResult
+    public mutating func capture(key: UInt16) -> FlowEffect? {
+        guard capturingKey else { return nil }
+        capturing = false
+        guard key != 53, let action = KeyAction(rawValue: controlsRow) else { return nil }
+        return bindings.bind(key, to: action, cluster: controlsCluster) ? .bindingsChanged : nil
+    }
+
+    /// The keys the player saved earlier.
+    public mutating func setBindings(_ new: KeyBindings) { bindings = new }
 
     private mutating func leaveOnline() {
         phase = .setup

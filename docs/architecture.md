@@ -186,7 +186,14 @@ is checked by playing it again (a resync leaves frames this client never stepped
 kept). The app asks at the results screen, twice a second, through the same `lf_match_replay_*` calls the
 local replay uses; the file is the server's canonical input, the same on every client.
 
-Not built yet: rebinding, dead-zone settings, per-seat device menus, sound,
+Keys: the Mode row's last choice opens the controls screen. Left and right pick one of the three clusters,
+Return on an action waits for the next key press (Esc, or a controller's B, cancels), and the last row puts the
+standard keys back. A key belongs to one action: giving it to another takes it from the one that had it, which
+gets the key the other gave up, so nothing is ever bound twice (`KeyBindings`). The bindings are kept in the
+`keys` preference (21 key codes; a damaged or incomplete value falls back to the standard keys). The game view also
+reports modifier keys, which send no key down or up, only a change of flags (right shift is the arrows' Break).
+
+Not built yet: dead-zone settings, per-seat device menus, sound,
 character art, interpolation between ticks. Bots are the footing bot only (see
 `include/ledgefall/bot.hpp`).
 

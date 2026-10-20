@@ -43,8 +43,16 @@ final class AppModel: ObservableObject {
 
     init() {
         loop = GameLoop(match: AppModel.demoMatch())
+        if let stored = UserDefaults.standard.array(forKey: AppModel.keysDefault) as? [[Int]], let saved = KeyBindings(stored: stored) {
+            flow.setBindings(saved)
+            seating = newSeating()
+        }
         publish()
     }
+
+    private static let keysDefault = "keys"
+
+    private func newSeating() -> Seating { Seating(layouts: flow.bindings.layouts) }
 
     /// What is drawn: the online match while one is on, else the local one.
     var displayMatch: Match { (flow.online ? sessions.first?.match : nil) ?? (flow.phase == .watching ? watch?.match : nil) ?? loop.match }
@@ -73,6 +81,10 @@ final class AppModel: ObservableObject {
 
     func handle(_ action: MenuAction) {
         guard let effect = flow.handle(action) else { return }
+        perform(effect)
+    }
+
+    private func perform(_ effect: FlowEffect) {
         switch effect {
         case .startMatch: startMatch()
         case .showDemo: loop = GameLoop(match: AppModel.demoMatch())
@@ -96,12 +108,20 @@ final class AppModel: ObservableObject {
         case .leaveOnline:
             dropOnline()
             loop = GameLoop(match: AppModel.demoMatch())
+        case .bindingsChanged:
+            UserDefaults.standard.set(flow.bindings.stored, forKey: AppModel.keysDefault)
+            seating.layouts = flow.bindings.layouts
+            onlineSeating.layouts = flow.bindings.layouts
         }
         publish()
     }
 
     /// A key press from the window. Game keys are read from `heldKeys`; menus use presses.
     func keyPressed(_ code: UInt16) {
+        if flow.capturingKey {  // the controls screen is waiting for a key
+            if let effect = flow.capture(key: code) { perform(effect) }
+            return
+        }
         guard let action = MenuInput.action(forKey: code) else { return }
         // While playing only Esc is a menu key; the arrows are the game's.
         if flow.phase == .playing && action != .back { return }
@@ -248,7 +268,7 @@ final class AppModel: ObservableObject {
                     opened.append(s)
                 }
                 await MainActor.run {
-                    self.onlineSeating = Seating()
+                    self.onlineSeating = self.newSeating()
                     self.onlineSeating.limit(to: count)
                     self.sessions = opened
                     self.onlineReplayKept = false
@@ -320,7 +340,7 @@ final class AppModel: ObservableObject {
                     flow.onlineFailed("Disconnected from the game server")
                 }
             }
-        case .setup:
+        case .setup, .controls:
             if loop.match.isOver { loop = GameLoop(match: AppModel.demoMatch()) }
             loop.advance(to: now) { [] }  // the demo match plays itself
         case .playing:

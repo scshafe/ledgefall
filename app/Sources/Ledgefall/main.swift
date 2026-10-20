@@ -17,6 +17,21 @@ final class GameView: MTKView {
 
     override func keyUp(with event: NSEvent) { model?.heldKeys.remove(event.keyCode) }
 
+    // Modifier keys (shift, control, option, command) send no key down or up, only a change of flags. The
+    // flags' device-dependent bits say which side is held, so the two shift keys are told apart.
+    private static let modifierBits: [UInt16: UInt] = [
+        56: 0x2, 60: 0x4, 59: 0x1, 62: 0x2000, 58: 0x20, 61: 0x40, 55: 0x8, 54: 0x10,
+    ]
+
+    override func flagsChanged(with event: NSEvent) {
+        guard let model, let bit = GameView.modifierBits[event.keyCode] else { return }
+        if event.modifierFlags.rawValue & bit != 0 {
+            if model.heldKeys.insert(event.keyCode).inserted { model.keyPressed(event.keyCode) }
+        } else {
+            model.heldKeys.remove(event.keyCode)
+        }
+    }
+
     // Keys held when the window loses focus would otherwise stay "held".
     override func resignFirstResponder() -> Bool {
         model?.heldKeys.removeAll()
