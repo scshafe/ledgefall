@@ -37,6 +37,8 @@ class NetplaySimulation final : public npk::session::Simulation {
   State state_;
 };
 
+// (The server's factory, below, is in netplay_options.cpp: the client side of the game does not link JSON.)
+
 // A match for `players` seats from the options the lobby passed on: all optional.
 //   "stocks"      1..5 (default 3)
 //   "seed"        0..2^32-1 (default: 1)
