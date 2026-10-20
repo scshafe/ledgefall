@@ -36,3 +36,6 @@ every hash.
   placeables with an optional single-entity filter (#21). The engine's snapshot
   format is now 8 and its pinned hashes changed, so ours did too: the golden
   trace is regenerated (same match, same winner and tick count).
+- `eaff550c6c3c23f7d79c2173d8c4e6ca41c6b76e`: `straddle_share` (fighter-physics#29), configuration only: the
+  snapshot format is unchanged. Ledgefall sets it to 0.75 on every platform (lost-footing's rule), which changes how the
+  scripted match plays (same winner, 1377 ticks became 1515), so the golden trace is regenerated.

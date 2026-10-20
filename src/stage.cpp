@@ -29,6 +29,7 @@ fp::PlatformStress tile_stress() {
   s.rider_share = Fixed::from_double(0.6);       // someone riding on your head: 60% of their load
   s.doom_rate = Fixed::from_double(1.0 / 80);    // doomed: it keeps going by itself
   s.decay = Fixed::from_double(1.0 / 260);       // nobody on it
+  s.straddle_share = Fixed::from_double(0.75);   // on the seam between two tiles: 75% of the load on each (lost-footing)
   return s;
 }
 
@@ -38,6 +39,7 @@ fp::PlatformStress slab_stress() {
   fp::PlatformStress s;
   s.shake_at = Fixed::from_double(0.45);
   s.doom_at = Fixed::from_double(0.75);
+  s.straddle_share = Fixed::from_double(0.75);  // the supporting platform's setting counts, so a slab's seam with a tile too
   return s;
 }
 
