@@ -19,6 +19,13 @@ Fixed cost(const fp::PlatformDef& d, const fp::EntityState& e) {
   return c;
 }
 
+// Whether the tide covers (or is about to cover) a surface at this height.
+bool tide_over(const State& state, Fixed top) {
+  const Hazards& hz = state.hazards;
+  if (hz.tide == TidePhase::Calm) return false;
+  return top < hz.tide_level + Fixed::from_int(6);
+}
+
 void choose_target(const Rules& rules, const State& state, const fp::EntityState& e, Bot& bot) {
   bot.target = -1;
   Fixed best = Fixed::from_int(1 << 14);
@@ -26,6 +33,7 @@ void choose_target(const Rules& rules, const State& state, const fp::EntityState
   for (std::size_t i = 0; i < stage.platforms.size(); ++i) {
     if (state.world.platforms[i].phase != fp::PlatformPhase::Solid) continue;  // not shaking, gone or destroyed
     if (e.support == static_cast<std::int16_t>(i)) continue;  // standing still on a tile is what breaks it
+    if (tide_over(state, stage.platforms[i].rect.top)) continue;  // under water, or about to be
     const Fixed c = cost(stage.platforms[i], e);
     if (c < best) {
       best = c;
@@ -223,6 +231,80 @@ void use_kit(const Rules& rules, const State& state, int seat, Bot& bot, Input& 
   if (plan.high) in.buttons |= kButtonJump;
 }
 
+// Standing on, or about to fall onto, something: a tile in play or a placeable platform whose x-range holds us.
+bool surface_below(const Rules& rules, const State& state, const fp::EntityState& e) {
+  const auto& platforms = rules.engine.stage.platforms;
+  const Fixed slack = Fixed::from_int(3);
+  for (std::size_t i = 0; i < platforms.size(); ++i) {
+    if (!detail::in_play(state.world.platforms[i].phase)) continue;
+    const fp::Rect& r = platforms[i].rect;
+    if (r.top <= e.pos.y + Fixed::one() && e.pos.x >= r.left - slack && e.pos.x <= r.right + slack) return true;
+  }
+  for (std::size_t slot = 0; slot < state.world.placeables.size(); ++slot) {
+    const fp::Placeable& p = state.world.placeables[slot];
+    if (p.active == 0 || (p.kind != fp::PlaceableKind::OneWay && p.kind != fp::PlaceableKind::Wall)) continue;
+    if (p.rect.top <= e.pos.y + Fixed::one() && e.pos.x >= p.rect.left - slack && e.pos.x <= p.rect.right + slack) return true;
+  }
+  return false;
+}
+
+// Falling out of the stage with nothing under us.
+bool falling_out(const Rules& rules, const State& state, const fp::EntityState& e) {
+  return e.mode == fp::Mode::Airborne && e.vel.y <= Fixed::zero() && !surface_below(rules, state, e);
+}
+
+// The move that gets this character back in play from the air, if it has one: its slot.
+int recovery_slot(Character c) {
+  switch (c) {
+    case Character::Pip: return 0;   // an air spring launches Pip
+    case Character::Fuse: return 0;  // a bumper placed while falling appears underfoot and bounces Fuse
+    case Character::Mason: return 1; // a ledge under his feet
+    case Character::Dab: return 0;   // a decoy under her feet
+    default: return -1;
+  }
+}
+
+// Comets and rocks: jump a comet that is close and in our row, step out from under a rock.
+void dodge_hazards(const State& state, int seat, Bot& bot, Input& in) {
+  if (bot.blind) return;
+  const fp::EntityState& e = state.world.entities[static_cast<std::size_t>(seat)];
+  const bool grounded_now = e.mode != fp::Mode::Airborne;
+  const Fixed mid = e.pos.y + Fixed::from_int(6);
+  for (const HazardItem& h : state.hazards.list) {
+    if (h.kind == HazardKind::Comet) {
+      const Fixed dx = e.pos.x - h.pos.x;
+      const bool coming = (dx > Fixed::zero()) == (h.vel.x > Fixed::zero());
+      if (coming && fp::abs(dx) < Fixed::from_int(48) && fp::abs(h.pos.y - mid) < Fixed::from_int(14)) {
+        if (grounded_now) in.buttons |= kButtonJump;                       // over it
+        else if (e.vel.y > Fixed::zero()) in.buttons |= kButtonJump;       // hold the jump up
+      }
+    } else if (h.kind == HazardKind::RockWarn || h.kind == HazardKind::Rock) {
+      const Fixed dx = e.pos.x - h.pos.x;
+      const bool above = h.kind == HazardKind::RockWarn || h.pos.y > e.pos.y;
+      if (above && fp::abs(dx) < Fixed::from_int(16) && (h.kind == HazardKind::RockWarn || h.pos.y - e.pos.y < Fixed::from_int(200))) {
+        in.move_x = static_cast<std::int8_t>((dx >= Fixed::zero() ? 1 : -1) * kAxisMax);  // out of its column
+      }
+    }
+  }
+}
+
+// Falling out: fly towards the stage and use the character's recovery move.
+void recover(const Rules& rules, const State& state, int seat, Bot& bot, Input& in) {
+  const fp::EntityState& e = state.world.entities[static_cast<std::size_t>(seat)];
+  if (!falling_out(rules, state, e)) return;
+  // Head for the middle of the stage.
+  const fp::Rect& blast = rules.engine.stage.blast;
+  const Fixed centre = (blast.left + blast.right) / Fixed::from_int(2);
+  in.move_x = static_cast<std::int8_t>((e.pos.x < centre ? 1 : -1) * kAxisMax);
+  const int slot = recovery_slot(rules.setup.characters[static_cast<std::size_t>(seat)]);
+  const PlayerState& ps = state.players[static_cast<std::size_t>(seat)];
+  // Only once we are really below the stage's lowest tier, and when the move is ready.
+  if (slot < 0 || ps.cooldown[static_cast<std::size_t>(slot)] != 0) return;
+  if ((state.world.frame + static_cast<std::uint32_t>(seat)) % 3 != 0) return;
+  in.buttons |= static_cast<std::uint8_t>(kButtonPlace << slot);
+  (void)bot;
+}
+
 }  // namespace
 
 Input bot_input(const Rules& rules, const State& state, int seat, Bot& bot) {
@@ -237,6 +319,7 @@ Input bot_input(const Rules& rules, const State& state, int seat, Bot& bot) {
   } else {
     bot.wait = static_cast<std::int16_t>(reaction_ticks(bot.level));
     choose_target(rules, state, e, bot);
+    bot.blind = static_cast<int>(next_bot_random(bot) % 100) < hazard_miss_percent(bot.level);
   }
 
   Input in;
@@ -261,6 +344,8 @@ Input bot_input(const Rules& rules, const State& state, int seat, Bot& bot) {
   } else if (climb < Fixed::from_int(-2) && !airborne) {
     in.buttons |= kButtonDown;  // drop to a lower tier
   }
+  dodge_hazards(state, seat, bot, in);
+  recover(rules, state, seat, bot, in);
   use_kit(rules, state, seat, bot, in);
   return in;
 }

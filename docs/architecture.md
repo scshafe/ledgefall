@@ -109,7 +109,12 @@ difference will be absorbed.
   and Fuse's charge, gust, spring and drill for Pip, saw and bumper for Fuse,
   thorns and roots for Fern, rub out for Dab, lodestone and polarity for
   Ferro), turn to face the target, and cast with the level's gap and chance.
-  Their choices come from their own stream, not the match's.
+  Their choices come from their own stream, not the match's. They also survive: a comet
+  in their row is jumped, a rock's column left while it is announced, surfaces under
+  the tide avoided, and a bot falling out of the stage flies back towards its middle
+  and uses its character's recovery (Pip's air spring, Fuse's bumper underfoot,
+  Mason's ledge, Dab's decoy; Glim has her second air jump). Easy bots miss hazards
+  45% of the time, normal 15%, hard never (lost-footing's rates).
 - Teams and handicaps (`Setup::teams`, `seat_stocks`): the match ends when one
   side has anyone left and the whole side wins and places first; eliminations a
   teammate caused earn no credit; bots never target a teammate. Two sides are
