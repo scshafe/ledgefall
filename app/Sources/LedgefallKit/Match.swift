@@ -97,6 +97,7 @@ public final class Match {
     static let fixedOne = Float(LF_FIXED_ONE)
 
     private let handle: OpaquePointer
+    private let owns: Bool
     public let players: Int
 
     /// Nil unless `players` is 2...4 and `stocks` is 1...5 (and the rest is in range).
@@ -133,10 +134,19 @@ public final class Match {
         var setup = setup
         guard let h = lf_match_create_setup(&setup) else { return nil }
         self.handle = h
+        self.owns = true
         self.players = Int(setup.players)
     }
 
-    deinit { lf_match_destroy(handle) }
+    /// A read-only view of someone else's match (an online one): it can be drawn but not stepped, and
+    /// it must not outlive the object it looks into.
+    init(view: OpaquePointer) {
+        self.handle = view
+        self.owns = false
+        self.players = Int(lf_match_players(view))
+    }
+
+    deinit { if owns { lf_match_destroy(handle) } }
 
     /// Make a seat a bot, or a human again with nil.
     @discardableResult

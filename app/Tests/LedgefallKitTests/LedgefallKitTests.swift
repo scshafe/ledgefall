@@ -387,3 +387,136 @@ final class SeatingCapacityTests: XCTestCase {
         XCTAssertEqual(update.inputs.count, 4)
     }
 }
+
+final class OnlineSetupTests: XCTestCase {
+    func testRoomNameRoundTrips() throws {
+        let setup = OnlineSetup(arena: .tide, stocks: 4, seed: 4_000_000_001, fighters: [.ferro, .mason, .dab], teams: [0, nil, 1])
+        XCTAssertEqual(setup.roomName, "lf1 S3 K4 D4000000001 C603 T0n1")
+        XCTAssertLessThanOrEqual(setup.roomName.count, 40)  // the lobby's limit for a room name
+        XCTAssertEqual(OnlineSetup(roomName: setup.roomName), setup)
+        let widest = OnlineSetup(arena: .belts, stocks: 5, seed: UInt32.max, fighters: [.ferro, .ferro, .ferro, .ferro], teams: [0, 1, 0, 1])
+        XCTAssertLessThanOrEqual(widest.roomName.count, 40)
+        XCTAssertEqual(OnlineSetup(roomName: widest.roomName), widest)
+    }
+
+    func testRoomNamesThatAreNotOurs() {
+        for name in ["", "my game", "lf1 S1 K3 D1 C0 T0", "lf1 S9 K3 D1 C01 Tnn", "lf1 S1 K0 D1 C01 Tnn", "lf1 S1 K3 D1 C01 Tn",
+                     "lf1 S1 K3 D1 C09 Tnn", "lf1 S1 K3 D-1 C01 Tnn", "lf1 S1 K3 D1 C01 Tn2", "lf2 S1 K3 D1 C01 Tnn", "lf1 S1 K3 D1 C01234 Tnnnnn"] {
+            XCTAssertNil(OnlineSetup(roomName: name), name)
+        }
+    }
+
+    func testOptionsForTheServer() throws {
+        let setup = OnlineSetup(arena: .yard, stocks: 2, seed: 7, fighters: [.pip, .glim], teams: [nil, nil])
+        let o = setup.options
+        XCTAssertEqual(o["stocks"] as? Int, 2)
+        XCTAssertEqual(o["stage"] as? Int, 1)
+        XCTAssertEqual(o["characters"] as? [Int], [2, 1])
+        XCTAssertEqual(o["teams"] as? [Int], [-1, -1])
+        XCTAssertTrue(JSONSerialization.isValidJSONObject(o))
+    }
+}
+
+/// A scripted network: answers by method and path, and remembers what it was asked.
+final class ScriptedTransport: HTTPTransport {
+    var answers: [String: (Int, String)] = [:]
+    var seen: [(method: String, path: String, body: [String: Any]?, bearer: String?)] = []
+
+    func send(_ request: URLRequest) async throws -> (data: Data, status: Int) {
+        let key = "\(request.httpMethod ?? "") \(request.url?.path ?? "")"
+        let body = request.httpBody.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+        let bearer = request.value(forHTTPHeaderField: "Authorization")?.replacingOccurrences(of: "Bearer ", with: "")
+        seen.append((request.httpMethod ?? "", request.url?.path ?? "", body, bearer))
+        guard let (status, json) = answers[key] else { return (Data("{\"error\":\"nothing here\"}".utf8), 404) }
+        return (Data(json.utf8), status)
+    }
+}
+
+final class LobbyClientTests: XCTestCase {
+    private let setup = OnlineSetup(arena: .yard, stocks: 3, seed: 5, fighters: [.mason, .glim], teams: [nil, nil])
+
+    private func lobby(_ t: ScriptedTransport) -> LobbyClient { LobbyClient(base: URL(string: "http://127.0.0.1:8080")!, transport: t) }
+
+    func testHostingARoomAndWaitingForTheMatch() async throws {
+        let t = ScriptedTransport()
+        t.answers["POST /api/rooms"] = (201, "{\"id\":\"r1\"}")
+        t.answers["POST /api/rooms/r1/join"] = (200, "{\"secret\":\"s3cret\"}")
+        t.answers["POST /api/rooms/r1/ready"] = (200, "{}")
+        t.answers["POST /api/rooms/r1/me"] = (200, "{\"state\":\"playing\",\"token\":\"00112233445566778899aabbccddeeff\",\"server\":{\"udp\":\"ledgefall.example:7777\"}}")
+        let client = lobby(t)
+        let room = try await client.createRoom(setup)
+        XCTAssertEqual(room, "r1")
+        let secret = try await client.join(room, as: "Cole")
+        try await client.ready(room, secret: secret)
+        let me = try await client.me(room, secret: secret)
+        XCTAssertEqual(me, LobbyMe(state: "playing", token: "00112233445566778899aabbccddeeff", udp: "ledgefall.example:7777"))
+
+        // What was sent: the game, the seat count, the setup in the name and as options; the secret as a bearer.
+        XCTAssertEqual(t.seen[0].body?["game"] as? String, "ledgefall")
+        XCTAssertEqual(t.seen[0].body?["seats"] as? Int, 2)
+        XCTAssertEqual(t.seen[0].body?["name"] as? String, setup.roomName)
+        XCTAssertEqual((t.seen[0].body?["options"] as? [String: Any])?["stage"] as? Int, 1)
+        XCTAssertEqual(t.seen[1].body?["name"] as? String, "Cole")
+        XCTAssertNil(t.seen[1].bearer)
+        XCTAssertEqual(t.seen[2].bearer, "s3cret")
+        XCTAssertEqual(t.seen[3].bearer, "s3cret")
+    }
+
+    func testBrowsingOnlyLedgefallRoomsThatAreOpen() async throws {
+        let t = ScriptedTransport()
+        t.answers["GET /api/rooms"] = (200, """
+            {"rooms":[
+              {"id":"a","name":"\(setup.roomName)","state":"open","seat_count":2,"taken":1},
+              {"id":"b","name":"\(setup.roomName)","state":"playing","seat_count":2,"taken":2},
+              {"id":"c","name":"someone's toy game","state":"open","seat_count":2,"taken":0}]}
+            """)
+        t.answers["GET /api/status"] = (200, "{\"rooms\":3,\"game_servers\":1}")
+        let client = lobby(t)
+        let rooms = try await client.openRooms()
+        XCTAssertEqual(rooms.map(\.id), ["a"])
+        XCTAssertEqual(rooms.first?.setup, setup)
+        XCTAssertEqual(rooms.first?.taken, 1)
+        let servers = try await client.gameServers()
+        XCTAssertEqual(servers, 1)
+    }
+
+    func testErrorsFromTheLobby() async throws {
+        let t = ScriptedTransport()
+        t.answers["POST /api/rooms/r/join"] = (409, "{\"error\":\"started\"}")
+        let client = lobby(t)
+        do {
+            _ = try await client.join("r", as: "x")
+            XCTFail("expected an error")
+        } catch let e as LobbyError {
+            XCTAssertEqual(e.description, "started")
+        }
+        do {
+            _ = try await client.openRooms()
+            XCTFail("expected an error")
+        } catch let e as LobbyError {
+            XCTAssertEqual(e.description, "nothing here")
+        }
+    }
+}
+
+final class OnlineSessionTests: XCTestCase {
+    func testBadArgumentsAreRefused() {
+        let setup = OnlineSetup(arena: .yard, stocks: 3, seed: 1, fighters: [.mason, .glim], teams: [nil, nil])
+        XCTAssertNil(OnlineSession(setup: setup, server: "not an address", room: nil, token: nil))
+        XCTAssertNil(OnlineSession(setup: setup, server: "127.0.0.1:7777", room: "r", token: "short"))
+    }
+
+    func testAnUnansweredServerKeepsConnecting() throws {
+        let setup = OnlineSetup(arena: .yard, stocks: 3, seed: 1, fighters: [.mason, .glim], teams: [nil, nil])
+        // Nothing listens on this port: the session just keeps trying, and its match view is a fresh match.
+        let session = try XCTUnwrap(OnlineSession(setup: setup, server: "127.0.0.1:9", room: nil, token: nil))
+        XCTAssertEqual(session.update(), .connecting)
+        XCTAssertNil(session.seat)
+        XCTAssertEqual(session.match.players, 2)
+        XCTAssertEqual(session.match.tick, 0)
+        XCTAssertFalse(session.match.isOver)
+        session.setInput(PlayerInput(moveX: 100, jump: true))
+        session.match.step([])  // a view cannot be stepped
+        XCTAssertEqual(session.match.tick, 0)
+    }
+}
