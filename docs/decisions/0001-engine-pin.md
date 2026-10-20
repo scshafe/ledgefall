@@ -30,3 +30,5 @@ every hash.
   #20). The match played is unchanged (same winner, same tick count); every
   hash differs because the engine's snapshot now carries stress and the
   placeable slots, so `tests/golden/determinism_hashes.txt` was regenerated.
+- `3c6942ce50c86380d84245003181379bd4f20f01`: fighter-physics#25, restore accepts a doomed tile (#23). Snapshot
+  format and pinned hashes unchanged; nothing else in the engine changed.
