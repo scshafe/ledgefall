@@ -13,12 +13,13 @@ struct OverlayView: View {
 
     var body: some View {
         ZStack {
-            if ![.setup, .browsing, .connecting, .replays].contains(model.flow.phase) { stocksBar }
+            if ![.setup, .browsing, .connecting, .replays, .controls].contains(model.flow.phase) { stocksBar }
             switch model.flow.phase {
             case .setup: setupPanel
             case .browsing: browsingPanel
             case .connecting: connectingPanel
             case .replays: replaysPanel
+            case .controls: controlsPanel
             case .watching: watchingBar
             case .playing: EmptyView()
             case .paused: panel(title: "Paused", lines: ["Return / A: resume", "Esc / B: quit to setup"])
@@ -76,12 +77,12 @@ struct OverlayView: View {
                 row("Seat \(seat + 1)", value: flow.fighters[seat].name, selected: flow.selectedRow == Flow.firstSeatRow + seat)
                     .foregroundColor(seatColor(seat))
             }
-            row(flow.mode == .join ? "Find a room" : flow.mode == .host ? "Open the room" : "Start", value: nil, selected: flow.selectedRow == flow.startRow)
+            row(flow.mode == .join ? "Find a room" : flow.mode == .host ? "Open the room" : flow.mode == .controls ? "Change the keys" : "Start", value: nil, selected: flow.selectedRow == flow.startRow)
             if flow.mode != .local {
                 Text("Lobby: \(model.lobbyAddress ?? "not set (LEDGEFALL_LOBBY, or defaults write ledgefall lobby <address>)")")
                     .font(.footnote).foregroundColor(.secondary)
             }
-            Text("Arrows or d-pad to choose, Return or A to confirm.\nIn a match: WASD, arrows or IJKL (jump on the top key; Q E R, . / right shift, or U O P are the three moves), or a controller (A jump, X, B, Y the moves), to take a seat from the bots. Esc or the menu button pauses.")
+            Text("Arrows or d-pad to choose, Return or A to confirm.\nIn a match: WASD, arrows or IJKL (jump on the top key; Q E R, . / right shift, or U O P are the three moves; the Mode row can change them), or a controller (A jump, X, B, Y the moves), to take a seat from the bots. Esc or the menu button pauses.")
                 .font(.footnote)
                 .foregroundColor(.secondary)
         }
@@ -114,6 +115,37 @@ struct OverlayView: View {
                 .foregroundColor(index == flow.replayIndex ? .yellow : .white)
             }
             Text("Arrows or d-pad to choose, Return or A to watch, Esc or B to go back.")
+                .font(.footnote).foregroundColor(.secondary)
+        }
+        .padding(28)
+        .background(Color.black.opacity(0.7))
+        .cornerRadius(12)
+        .foregroundColor(.white)
+    }
+
+    private var controlsPanel: some View {
+        let flow = model.flow
+        let layout = flow.bindings.layouts[flow.controlsCluster]
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("Keys").font(.system(size: 34, weight: .bold))
+            Text("◂ Keys \(flow.controlsCluster + 1) (starts as \(KeyBindings.clusterNames[flow.controlsCluster])) ▸").font(.title2)
+            ForEach(KeyAction.allCases, id: \.rawValue) { action in
+                let selected = flow.controlsRow == action.rawValue
+                HStack {
+                    Text(selected ? "▸" : " ")
+                    Text(action.name).frame(width: 90, alignment: .leading)
+                    Text(selected && flow.capturing ? "press a key..." : KeyName.label(layout[action]))
+                }
+                .font(.title3)
+                .foregroundColor(selected ? .yellow : .white)
+            }
+            HStack {
+                Text(flow.controlsRow == KeyAction.allCases.count ? "▸" : " ")
+                Text("Back to the standard keys")
+            }
+            .font(.title3)
+            .foregroundColor(flow.controlsRow == KeyAction.allCases.count ? .yellow : .white)
+            Text("Left and right switch cluster, Return picks a key to change, then press the new one (Esc cancels). A key another action had goes to the one you took it from. Esc goes back.")
                 .font(.footnote).foregroundColor(.secondary)
         }
         .padding(28)

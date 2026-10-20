@@ -24,8 +24,10 @@ public struct Seating {
     public private(set) var devices: [InputDevice?] = Array(repeating: nil, count: Seating.seatCount)
     /// Seats at or beyond this are not in the match; no device takes them.
     public private(set) var capacity = Seating.seatCount
+    /// The keys of each cluster (the player may have changed them).
+    public var layouts: [KeyLayout]
 
-    public init() {}
+    public init(layouts: [KeyLayout] = KeyLayout.clusters) { self.layouts = layouts }
 
     /// Seat only the first `n` seats. A device in a seat that goes is released
     /// and joins again the next time it is used.
@@ -61,7 +63,7 @@ public struct Seating {
                 left.append(seat)
             }
         }
-        for (index, layout) in KeyLayout.clusters.enumerated() where layout.isActive(held: frame.keys) {
+        for (index, layout) in layouts.enumerated() where layout.isActive(held: frame.keys) {
             if let seat = join(.keyboard(cluster: index)) { joined.append(seat) }
         }
         for id in frame.pads.keys.sorted() where frame.pads[id]?.isActive == true {
@@ -70,7 +72,7 @@ public struct Seating {
 
         let inputs = devices.map { device -> PlayerInput in
             switch device {
-            case .keyboard(let cluster)?: return KeyLayout.clusters[cluster].input(held: frame.keys)
+            case .keyboard(let cluster)?: return layouts[cluster].input(held: frame.keys)
             case .controller(let id)?: return frame.pads[id].map(GamepadMapping.input) ?? PlayerInput()
             case nil: return PlayerInput()
             }

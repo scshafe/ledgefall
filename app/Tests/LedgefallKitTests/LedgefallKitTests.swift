@@ -686,7 +686,7 @@ extension FlowTests {
     func testReplayBrowsingFlow() {
         var flow = Flow()
         go(&flow, to: Flow.modeRow)
-        flow.handle(.left)  // local -> replay (wraps round)
+        for _ in 0..<3 { flow.handle(.right) }  // local, host, join, replay
         XCTAssertEqual(flow.mode, .replay)
         go(&flow, to: flow.startRow)
         XCTAssertEqual(flow.handle(.confirm), .listReplays)
@@ -706,5 +706,127 @@ extension FlowTests {
         XCTAssertEqual(flow.phase, .replays)
         XCTAssertEqual(flow.handle(.back), .stopWatching)
         XCTAssertEqual(flow.phase, .setup)
+    }
+}
+
+final class KeyBindingTests: XCTestCase {
+    func testBindingAKeyTakesItFromWhoHadIt() {
+        var b = KeyBindings.standard
+        XCTAssertTrue(b.bind(49, to: .jump, cluster: 0))  // space: nobody had it
+        XCTAssertEqual(b.layouts[0].jump, 49)
+        XCTAssertEqual(b.layouts[0][.down], KeyLayout.wasd.down)
+        // The arrows' left key (123) goes to WASD's right: arrows' left gets what WASD's right held (D, 2).
+        XCTAssertTrue(b.bind(123, to: .right, cluster: 0))
+        XCTAssertEqual(b.layouts[0].right, 123)
+        XCTAssertEqual(b.layouts[1].left, 2)
+        // Every key is still used once.
+        let all = b.stored.flatMap { $0 }
+        XCTAssertEqual(Set(all).count, all.count)
+    }
+
+    func testBindingTheSameKeyAgainAndRefusals() {
+        var b = KeyBindings.standard
+        XCTAssertTrue(b.bind(KeyLayout.wasd.jump, to: .jump, cluster: 0))
+        XCTAssertEqual(b, .standard)
+        XCTAssertFalse(b.bind(KeyLayout.none, to: .jump, cluster: 0))
+        XCTAssertFalse(b.bind(49, to: .jump, cluster: 3))
+        XCTAssertEqual(b, .standard)
+    }
+
+    func testStoredRoundTripAndDamage() {
+        var b = KeyBindings.standard
+        b.bind(49, to: .brk, cluster: 2)
+        XCTAssertEqual(KeyBindings(stored: b.stored), b)
+        XCTAssertEqual(KeyBindings(stored: KeyBindings.standard.stored), .standard)
+        XCTAssertNil(KeyBindings(stored: [[1, 2, 3]]))
+        var twice = KeyBindings.standard.stored
+        twice[1][0] = twice[0][0]  // one key for two actions
+        XCTAssertNil(KeyBindings(stored: twice))
+        var wild = KeyBindings.standard.stored
+        wild[0][0] = 70000
+        XCTAssertNil(KeyBindings(stored: wild))
+        wild[0][0] = -1
+        XCTAssertNil(KeyBindings(stored: wild))
+    }
+
+    func testResetAndNames() {
+        var b = KeyBindings.standard
+        b.bind(49, to: .left, cluster: 1)
+        b.reset()
+        XCTAssertEqual(b, .standard)
+        XCTAssertEqual(KeyName.label(49), "Space")
+        XCTAssertEqual(KeyName.label(60), "Right shift")
+        XCTAssertEqual(KeyName.label(126), "Up arrow")
+        XCTAssertEqual(KeyName.label(200), "key 200")
+        for layout in KeyLayout.clusters {  // every default key has a name of its own
+            for action in KeyAction.allCases { XCTAssertFalse(KeyName.label(layout[action]).hasPrefix("key ")) }
+        }
+    }
+
+    func testSeatingUsesTheChangedKeys() {
+        var b = KeyBindings.standard
+        b.bind(49, to: .jump, cluster: 0)  // WASD's jump (W) becomes space
+        var seating = Seating(layouts: b.layouts)
+        var update = seating.update(DeviceFrame(keys: [13]))  // W is now W's old place, held by nobody
+        XCTAssertEqual(update.joined, [])
+        update = seating.update(DeviceFrame(keys: [49]))
+        XCTAssertEqual(update.joined, [0])
+        XCTAssertEqual(update.inputs[0], PlayerInput(jump: true))
+    }
+}
+
+extension FlowTests {
+    func testChangingAKeyOnTheControlsScreen() {
+        var flow = Flow()
+        go(&flow, to: Flow.modeRow)
+        for _ in 0..<4 { flow.handle(.right) }
+        XCTAssertEqual(flow.mode, .controls)
+        go(&flow, to: flow.startRow)
+        XCTAssertNil(flow.handle(.confirm))
+        XCTAssertEqual(flow.phase, .controls)
+        XCTAssertFalse(flow.capturingKey)
+
+        flow.handle(.down)  // right
+        flow.handle(.down)  // jump
+        XCTAssertNil(flow.handle(.confirm))
+        XCTAssertTrue(flow.capturingKey)
+        XCTAssertEqual(flow.capture(key: 49), .bindingsChanged)
+        XCTAssertFalse(flow.capturingKey)
+        XCTAssertEqual(flow.bindings.layouts[0].jump, 49)
+
+        flow.handle(.right)  // the arrows' cluster
+        XCTAssertEqual(flow.controlsCluster, 1)
+        flow.handle(.left)
+        flow.handle(.left)  // wraps round to the third
+        XCTAssertEqual(flow.controlsCluster, 2)
+
+        // Esc cancels a capture and changes nothing; a controller's B does too.
+        let before = flow.bindings
+        flow.handle(.confirm)
+        XCTAssertNil(flow.capture(key: 53))
+        XCTAssertEqual(flow.bindings, before)
+        flow.handle(.confirm)
+        XCTAssertTrue(flow.capturingKey)
+        flow.handle(.down)  // ignored while a key is awaited
+        flow.handle(.back)
+        XCTAssertFalse(flow.capturingKey)
+        XCTAssertEqual(flow.phase, .controls)
+
+        // The last row puts the standard keys back.
+        for _ in 0..<KeyAction.allCases.count { flow.handle(.down) }
+        XCTAssertEqual(flow.controlsRow, KeyAction.allCases.count)
+        XCTAssertEqual(flow.handle(.confirm), .bindingsChanged)
+        XCTAssertEqual(flow.bindings, .standard)
+
+        XCTAssertNil(flow.handle(.back))
+        XCTAssertEqual(flow.phase, .setup)
+    }
+
+    func testKeysAreNotCapturedOutsideTheControlsScreen() {
+        var flow = Flow()
+        XCTAssertNil(flow.capture(key: 49))
+        XCTAssertEqual(flow.bindings, .standard)
+        flow.setBindings({ var b = KeyBindings.standard; b.bind(49, to: .jump, cluster: 0); return b }())
+        XCTAssertEqual(flow.bindings.layouts[0].jump, 49)
     }
 }
