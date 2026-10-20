@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# End to end, with the real executables: netplay-kit's lobby, ledgefall's game server registered with
+# it, and two bots that create/find a room, take seats, ready, join the server over UDP with their
+# tokens and play a match to its end. Like netplay-kit's own, adapted to ledgefall.
+#   scripts/e2e <build directory>
+set -euo pipefail
+build="$1"
+lobby_bin="$build/_deps/netplay_kit-build/npk_lobby"
+# fighter-physics#23: until the pinned engine can restore a world with a doomed tile, a client cannot
+# roll back through one and a real match cannot run. Say so and stop; this runs for real after the bump.
+if ! "$build/ledgefall_netplay_test" --probe; then
+  echo "SKIPPED: fighter-physics#23 (restore rejects a doomed tile) is not fixed in the pin"
+  exit 0
+fi
+work="$(mktemp -d)"
+pids=()
+cleanup() {
+  for p in "${pids[@]:-}"; do kill "$p" 2>/dev/null || true; done
+  wait 2>/dev/null || true
+  rm -rf "$work"
+}
+trap cleanup EXIT
+
+base=$((20000 + (RANDOM % 20000)))
+lobby_port=$base; control_port=$((base + 1)); udp_port=$((base + 2))
+export E2E_SECRET="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+export NPK_CONTROL_SECRET_VAR=E2E_SECRET
+
+# No secret, no start.
+if env -u E2E_SECRET "$build/ledgefall_server" 2>/dev/null; then echo "game server started without a secret"; exit 1; fi
+
+NPK_BIND=127.0.0.1 NPK_HTTP_PORT=$lobby_port "$lobby_bin" 2>"$work/lobby.log" & lobby=$!; pids+=("$lobby")
+NPK_UDP_PORT=$udp_port NPK_CONTROL_PORT=$control_port NPK_CONTROL_BIND=127.0.0.1 NPK_MAX_MATCHES=2 \
+  NPK_LOBBY=127.0.0.1:$lobby_port NPK_ADVERTISE_CONTROL=127.0.0.1:$control_port NPK_ADVERTISE_UDP=127.0.0.1:$udp_port \
+  "$build/ledgefall_server" 2>"$work/gameserver.log" & gs=$!; pids+=("$gs")
+sleep 0.5
+
+room="e2e-$RANDOM"
+"$build/ledgefall_bot" --lobby 127.0.0.1:$lobby_port --room "$room" --create 2 --stocks 1 --stage 0 --name alice --timeout 120 >"$work/alice.out" 2>&1 & a=$!
+sleep 1
+"$build/ledgefall_bot" --lobby 127.0.0.1:$lobby_port --room "$room" --stocks 1 --stage 0 --name bob --timeout 120 >"$work/bob.out" 2>&1 & b=$!
+
+status=0
+wait "$a" || status=1
+wait "$b" || status=1
+cat "$work/alice.out" "$work/bob.out"
+grep -q "RESULT outcome=completed" "$work/alice.out" || status=1
+grep -q "RESULT outcome=completed" "$work/bob.out" || status=1
+
+# The servers stop cleanly on SIGTERM, and neither logged the secret or a token.
+kill -TERM "$lobby" "$gs"
+wait "$lobby" || { echo "lobby exit code $?"; status=1; }
+wait "$gs" || { echo "game server exit code $?"; status=1; }
+pids=()
+if grep -q "$E2E_SECRET" "$work"/*.log "$work"/*.out; then echo "the secret is in a log"; status=1; fi
+if [ "$status" -ne 0 ]; then
+  echo "--- lobby.log"; cat "$work/lobby.log"; echo "--- gameserver.log"; cat "$work/gameserver.log"
+fi
+exit "$status"

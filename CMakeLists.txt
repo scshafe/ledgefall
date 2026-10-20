@@ -48,8 +48,16 @@ if(LEDGEFALL_BUILD_SERVER)
     target_compile_options(ledgefall_netplay PRIVATE -Wall -Wextra -Wpedantic -Werror)
   endif()
 
+  add_executable(ledgefall_bot server/bot.cpp)
+  target_link_libraries(ledgefall_bot PRIVATE ledgefall::ledgefall_netplay)
+  if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(ledgefall_bot PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  endif()
+
   add_executable(ledgefall_server server/main.cpp)
   target_link_libraries(ledgefall_server PRIVATE ledgefall::ledgefall_netplay)
+  # The lobby is netplay-kit's; the end-to-end test needs it built (it is EXCLUDE_FROM_ALL there).
+  add_custom_target(ledgefall_lobby_for_tests ALL DEPENDS npk_lobby)
   if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(ledgefall_server PRIVATE -Wall -Wextra -Wpedantic -Werror)
   endif()
@@ -87,6 +95,8 @@ if(BUILD_TESTING)
     add_executable(ledgefall_netplay_test tests/netplay_test.cpp)
     target_link_libraries(ledgefall_netplay_test PRIVATE ledgefall::ledgefall_netplay)
     add_test(NAME ledgefall_netplay COMMAND ledgefall_netplay_test)
+    # The real executables: a lobby, the game server and two bots playing a match to its end.
+    add_test(NAME ledgefall_e2e COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/e2e ${CMAKE_BINARY_DIR})
   endif()
 
   add_test(NAME ledgefall_core_determinism_guards

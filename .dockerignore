@@ -1,0 +1,8 @@
+build
+build-server
+app
+tests
+docs
+scripts
+.git
+.github

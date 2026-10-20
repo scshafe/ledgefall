@@ -1,0 +1,82 @@
+# The ledgefall stack: netplay-kit's lobby and ledgefall's game server on one network, behind one
+# Tailscale node (userspace sidecar). DRAFT for the owner session to wire up: the subnet, the node
+# name and the tailnet name below are placeholders (see README.md). The host's tools/stack validates
+# a stack like this against an allowlist; `scripts/check-stack` runs the vendored validator on it.
+#
+# Topology: one network namespace, the sidecar's. The lobby and the game server both run in it
+# (`network_mode: service:ts-ledgefall`), so the server reaches the lobby on 127.0.0.1:8080 and the
+# lobby reaches the server's control API on 127.0.0.1:9000; no compose network or service name is
+# involved (a userspace sidecar only forwards inbound). Players reach the lobby over HTTPS through
+# `tailscale serve` (serve.json -> 127.0.0.1:8080) and the game server over UDP on the node's tailnet
+# address, port 7777 (the echo measurement in netplay-kit's docs/design.md "Network path" showed that
+# path works).
+# Under userspace Tailscale a tailnet peer reaches every port listening in the namespace, the control
+# API (9000) included; it is protected by the shared secret (Bearer, constant-time compare, 16+ bytes,
+# never logged), which is why the lobby and the server refuse to start without one.
+# TODO(owner): the node name `ledgefall` and the tailnet name in NPK_PUBLIC_UDP are placeholders.
+name: ledgefall
+
+networks:
+  egress:
+    driver: bridge
+
+services:
+  ts-ledgefall:
+    image: tailscale/tailscale@sha256:c507f3a2a6ab1cabd8d809b98edeb41edbd5c3fb6ad9632ffd098b4c7d0b4065  # v1.102.5
+    container_name: ts-ledgefall
+    init: true
+    restart: unless-stopped
+    dns: [1.1.1.1]
+    security_opt: [no-new-privileges:true]
+    environment:
+      TS_HOSTNAME: ledgefall
+      TS_USERSPACE: "true"
+      TS_AUTH_ONCE: "true"
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_SERVE_CONFIG: /config/serve.json
+      TS_AUTHKEY: ${TS_AUTHKEY:-}
+    volumes:
+      - ./state/tailscale:/var/lib/tailscale
+      - ./serve.json:/config/serve.json:ro
+    networks:
+      egress: {}
+
+  lobby:
+    image: ${LEDGEFALL_IMAGE}
+    container_name: ledgefall-lobby
+    entrypoint: ["/npk-lobby"]
+    init: true
+    user: "65532:65532"
+    restart: unless-stopped
+    network_mode: service:ts-ledgefall
+    depends_on: [ts-ledgefall]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      NPK_BIND: 127.0.0.1
+      NPK_HTTP_PORT: "8080"
+      NPK_CONTROL_SECRET: ${NPK_CONTROL_SECRET:?set NPK_CONTROL_SECRET in .env}
+
+  gameserver:
+    image: ${LEDGEFALL_IMAGE}
+    container_name: ledgefall-server
+    entrypoint: ["/ledgefall-server"]
+    init: true
+    user: "65532:65532"
+    restart: unless-stopped
+    network_mode: service:ts-ledgefall
+    depends_on: [ts-ledgefall, lobby]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      NPK_UDP_PORT: "7777"
+      NPK_CONTROL_PORT: "9000"
+      NPK_CONTROL_BIND: 127.0.0.1
+      NPK_LOBBY: 127.0.0.1:8080
+      NPK_ADVERTISE_CONTROL: 127.0.0.1:9000
+      # What players put in their client: the node's tailnet name and the UDP port.
+      NPK_ADVERTISE_UDP: ${NPK_PUBLIC_UDP:?set NPK_PUBLIC_UDP in .env, e.g. ledgefall.<tailnet>.ts.net:7777}
+      NPK_MAX_MATCHES: "16"
+      NPK_CONTROL_SECRET: ${NPK_CONTROL_SECRET:?set NPK_CONTROL_SECRET in .env}
