@@ -88,6 +88,11 @@ void overtime(const Rules& rules, State& state, const fp::Events& events) {
 // last out first. Ties (the same tick, or survivors together) go to credited
 // eliminations, then fewer self-eliminations, then more platforms broken, then
 // the lower seat (lost-footing's tieBreak).
+int side_of(const Rules& rules, int seat) {
+  const auto t = rules.setup.teams[static_cast<std::size_t>(seat)];
+  return t >= 0 ? t : 100 + seat;
+}
+
 void rank(State& state) {
   const std::size_t n = state.players.size();
   auto better = [&](int a, int b) {
@@ -113,9 +118,10 @@ void rank(State& state) {
 }
 
 // A player leaves the stage: a stock lost, to whoever is credited or to nobody.
-void eliminate(State& state, std::size_t i) {
+void eliminate(const Rules& rules, State& state, std::size_t i) {
   PlayerState& p = state.players[i];
-  const int by = p.blame_by >= 0 && static_cast<std::int32_t>(state.world.frame) - p.blame_tick <= kBlameWindowTicks ? p.blame_by : -1;
+  int by = p.blame_by >= 0 && static_cast<std::int32_t>(state.world.frame) - p.blame_tick <= kBlameWindowTicks ? p.blame_by : -1;
+  if (by >= 0 && same_side(rules, by, static_cast<int>(i))) by = -1;  // friendly fire earns no credit
   --p.stocks;
   ++p.stats.deaths;
   if (by >= 0) ++state.players[static_cast<std::size_t>(by)].stats.kos;
@@ -126,6 +132,13 @@ void eliminate(State& state, std::size_t i) {
 }
 
 }  // namespace
+
+bool same_side(const Rules& rules, int a, int b) { return side_of(rules, a) == side_of(rules, b); }
+
+int winning_team(const Rules& rules, const State& state) {
+  if (!state.over || state.winner < 0) return -1;
+  return rules.setup.teams[static_cast<std::size_t>(state.winner)];
+}
 
 State make_state(const Rules& rules) {
   State s;
@@ -141,7 +154,8 @@ State make_state(const Rules& rules) {
   for (int i = 0; i < n; ++i) {
     s.world.entities.push_back(spawn_at(rules.spawns[static_cast<std::size_t>(i)]));
     PlayerState p;
-    p.stocks = static_cast<std::int8_t>(rules.setup.stocks);
+    const auto handicap = rules.setup.seat_stocks[static_cast<std::size_t>(i)];
+    p.stocks = static_cast<std::int8_t>(handicap > 0 ? handicap : rules.setup.stocks);
     p.invuln = kInvulnTicks;
     s.players.push_back(p);
   }
@@ -229,13 +243,19 @@ void step(const Rules& rules, State& state, std::span<const Input> inputs) {
         p.invuln = kInvulnTicks;
       }
     } else if (state.world.entities[i].eliminated != 0 && p.stocks > 0) {
-      eliminate(state, i);
+      eliminate(rules, state, i);
     }
   }
 
-  int standing = 0;
-  for (const PlayerState& p : state.players) standing += p.stocks > 0 ? 1 : 0;
-  if (standing <= 1) {
+  // The match ends when one side (or nobody) has anyone left.
+  int sides[2 + kMaxPlayers + 100] = {};
+  int standing_sides = 0;
+  for (std::size_t i = 0; i < n; ++i) {
+    if (state.players[i].stocks <= 0) continue;
+    const int side = side_of(rules, static_cast<int>(i));
+    if (sides[side]++ == 0) ++standing_sides;
+  }
+  if (standing_sides <= 1) {
     state.over = true;
     rank(state);
   }

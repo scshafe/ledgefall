@@ -177,7 +177,7 @@ void io_state(A& a, State& s) {
 bool plausible(const Rules& rules, const State& s) {
   const int n = rules.setup.players;
   for (const PlayerState& p : s.players) {
-    if (p.stocks < 0 || p.stocks > kMaxStocks || p.respawn_timer < 0 || p.respawn_timer > kRespawnDelayTicks) return false;
+    if (p.stocks < 0 || p.stocks > kMaxSeatStocks || p.respawn_timer < 0 || p.respawn_timer > kRespawnDelayTicks) return false;
     for (auto c : p.cooldown) {
       if (c < 0 || c > 20 * kTicksPerSecond) return false;
     }

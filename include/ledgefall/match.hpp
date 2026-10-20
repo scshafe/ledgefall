@@ -25,6 +25,7 @@ constexpr int kMaxPlayers = 4;
 constexpr int kMinStocks = 1;
 constexpr int kMaxStocks = 5;
 constexpr int kDefaultStocks = 3;
+constexpr int kMaxSeatStocks = 9;  // a handicap can go this high
 constexpr int kTicksPerSecond = 60;
 constexpr int kRespawnDelayTicks = kTicksPerSecond * 3 / 2;  // 1.5 s after an elimination
 constexpr int kInvulnTicks = 2 * kTicksPerSecond;            // hazards and contact ignore a respawned player this long
@@ -55,6 +56,11 @@ struct Setup {
   int stocks = kDefaultStocks;
   std::uint32_t seed = 1;  // the match's one random stream (the lobby picks it)
   StageId stage = StageId::Practice;
+  // Per seat: a team (0 or 1; -1 plays alone) and a handicap (this many stocks instead of `stocks`; 0 for none, 1 to 9).
+  // The match ends when one side has anyone left and the whole side wins. Teams need two sides (A and B, or a
+  // team and a solo player); with only one, `make_rules` has everyone play alone.
+  std::array<std::int8_t, kMaxPlayers> teams{-1, -1, -1, -1};
+  std::array<std::int8_t, kMaxPlayers> seat_stocks{0, 0, 0, 0};
   std::array<Character, kMaxPlayers> characters{Character::Mason, Character::Glim, Character::Pip, Character::Fuse};
 };
 
@@ -221,6 +227,12 @@ struct State {
   std::array<std::int8_t, kMaxTiles> slab_hp{};   // by stage platform: hit points left of a sturdy slab
   Hazards hazards;
 };
+
+// Whether two seats are on the same side (a team, or the same player).
+bool same_side(const Rules& rules, int a, int b);
+
+// The team that won, once the match is over and was played in teams; -1 otherwise.
+int winning_team(const Rules& rules, const State& state);
 
 State make_state(const Rules& rules);
 

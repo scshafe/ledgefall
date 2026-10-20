@@ -65,6 +65,19 @@ final class MatchTests: XCTestCase {
         XCTAssertEqual(yard.weather.galePhase, 0)
     }
 
+    func testTeamsAndHandicaps() throws {
+        let match = try XCTUnwrap(Match(players: 3, stocks: 3, teams: [0, 0, 1], seatStocks: [0, 0, 5]))
+        XCTAssertEqual(match.player(0).team, 0)
+        XCTAssertEqual(match.player(2).team, 1)
+        XCTAssertEqual(match.player(2).stocks, 5)
+        XCTAssertEqual(match.player(0).stocks, 3)
+        XCTAssertNil(match.winningTeam)
+        // One side only: everyone plays alone.
+        let alone = try XCTUnwrap(Match(players: 3, teams: [0, 0, 0]))
+        XCTAssertEqual(alone.player(0).team, -1)
+        XCTAssertNil(Match(players: 3, seatStocks: [10, 0, 0]))
+    }
+
     func testSameInputsSameHash() throws {
         func run() throws -> UInt64 {
             let match = try XCTUnwrap(Match(players: 2))

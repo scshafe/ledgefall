@@ -82,6 +82,8 @@ public struct PlayerView {
     /// Ticks until each of the three moves can be cast again.
     public var cooldown: [Int]
     public var place: Int
+    /// -1 plays alone, else 0 or 1.
+    public var team: Int
     public var kos: Int
     public var falls: Int
 }
@@ -94,17 +96,34 @@ public final class Match {
     private let handle: OpaquePointer
     public let players: Int
 
-    /// Nil unless `players` is 2...4 and `stocks` is 1...5.
+    /// Nil unless `players` is 2...4 and `stocks` is 1...5 (and the rest is in range).
+    /// `teams` gives each seat a team (0 or 1; nil plays alone; a match needs two sides, else all play alone),
+    /// `seatStocks` a handicap (1...9 stocks for the seat instead of `stocks`; 0 for none).
     public init?(players: Int, stocks: Int = 3, seed: UInt32 = 1, characters: [Fighter]? = nil,
-                 arena: Arena = .practice) {
-        let handle: OpaquePointer?
-        if let characters, characters.count >= players {
-            let raw = characters.prefix(players).map { UInt8($0.rawValue) }
-            handle = lf_match_create_with(Int32(players), Int32(stocks), seed, raw, Int32(arena.rawValue))
-        } else {
-            handle = lf_match_create_with(Int32(players), Int32(stocks), seed, nil, Int32(arena.rawValue))
+                 arena: Arena = .practice, teams: [Int?]? = nil, seatStocks: [Int]? = nil) {
+        var setup = lf_setup()
+        setup.players = Int32(players)
+        setup.stocks = Int32(stocks)
+        setup.seed = seed
+        setup.stage = Int32(arena.rawValue)
+        let defaults: [Fighter] = [.mason, .glim, .pip, .fuse]
+        let seats = [0, 1, 2, 3]
+        let fighters = seats.map { i -> UInt8 in
+            let f = (characters != nil && i < characters!.count && i < players) ? characters![i] : defaults[i]
+            return UInt8(f.rawValue)
         }
-        guard let h = handle else { return nil }
+        let teamValues = seats.map { i -> Int8 in
+            guard let teams, i < teams.count, let t = teams[i] else { return -1 }
+            return Int8(t)
+        }
+        let handicaps = seats.map { i -> Int8 in
+            guard let seatStocks, i < seatStocks.count else { return 0 }
+            return Int8(clamping: seatStocks[i])
+        }
+        setup.characters = (fighters[0], fighters[1], fighters[2], fighters[3])
+        setup.teams = (teamValues[0], teamValues[1], teamValues[2], teamValues[3])
+        setup.seat_stocks = (handicaps[0], handicaps[1], handicaps[2], handicaps[3])
+        guard let h = lf_match_create_setup(&setup) else { return nil }
         self.handle = h
         self.players = players
     }
@@ -140,18 +159,23 @@ public final class Match {
         let w = Int(lf_match_winner(handle))
         return w >= 0 ? w : nil
     }
+    /// The team that won (0 or 1) in a team match once it is over; nil otherwise.
+    public var winningTeam: Int? {
+        let t = Int(lf_match_winning_team(handle))
+        return t >= 0 ? t : nil
+    }
     public var hash: UInt64 { lf_match_hash(handle) }
 
     public func player(_ seat: Int) -> PlayerView {
         var p = lf_player()
         guard lf_match_player(handle, Int32(seat), &p) != 0 else {
-            return PlayerView(stocks: 0, respawnTimer: 0, character: .mason, cooldown: [0, 0, 0], place: 0, kos: 0, falls: 0)
+            return PlayerView(stocks: 0, respawnTimer: 0, character: .mason, cooldown: [0, 0, 0], place: 0, team: -1, kos: 0, falls: 0)
         }
         return PlayerView(
             stocks: Int(p.stocks), respawnTimer: Int(p.respawn_timer),
             character: Fighter(rawValue: Int(p.character)) ?? .mason,
             cooldown: [Int(p.cooldown.0), Int(p.cooldown.1), Int(p.cooldown.2)],
-            place: Int(p.place), kos: Int(p.kos), falls: Int(p.falls))
+            place: Int(p.place), team: Int(p.team), kos: Int(p.kos), falls: Int(p.falls))
     }
 
     public func entity(_ seat: Int) -> EntityView? {

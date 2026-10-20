@@ -224,6 +224,11 @@ bool valid(const Setup& s) noexcept {
   for (Character c : s.characters) {
     if (static_cast<int>(c) >= kCharacterCount) return false;
   }
+  for (int i = 0; i < kMaxPlayers; ++i) {
+    const auto t = s.teams[static_cast<std::size_t>(i)];
+    const auto k = s.seat_stocks[static_cast<std::size_t>(i)];
+    if (t < -1 || t > 1 || k < 0 || k > kMaxSeatStocks) return false;
+  }
   return static_cast<int>(s.stage) < kStageCount && s.players >= kMinPlayers && s.players <= kMaxPlayers &&
          s.stocks >= kMinStocks && s.stocks <= kMaxStocks;
 }
@@ -232,6 +237,18 @@ std::optional<Rules> make_rules(const Setup& setup) {
   if (!valid(setup)) return std::nullopt;
   Rules r;
   r.setup = setup;
+  // Teams need two sides; with one, everyone plays alone.
+  {
+    std::array<bool, 2 + kMaxPlayers> sides{};
+    int count = 0;
+    for (int i = 0; i < setup.players; ++i) {
+      const auto t = setup.teams[static_cast<std::size_t>(i)];
+      const std::size_t side = t >= 0 ? static_cast<std::size_t>(t) : static_cast<std::size_t>(2 + i);
+      if (!sides[side]) ++count;
+      sides[side] = true;
+    }
+    if (count < 2) r.setup.teams = {-1, -1, -1, -1};
+  }
   switch (setup.stage) {
     case StageId::Practice: practice(r); break;
     case StageId::Yard: yard(r); break;

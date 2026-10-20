@@ -103,6 +103,10 @@ difference will be absorbed.
   thorns and roots for Fern, rub out for Dab, lodestone and polarity for
   Ferro), turn to face the target, and cast with the level's gap and chance.
   Their choices come from their own stream, not the match's.
+- Teams and handicaps (`Setup::teams`, `seat_stocks`): the match ends when one
+  side has anyone left and the whole side wins and places first; eliminations a
+  teammate caused earn no credit; bots never target a teammate. Two sides are
+  needed (A and B, or a team and a solo player), else everyone plays alone.
 - Known gaps against lost-footing: the respawn halo and post-respawn immunity
   wait for hazards; the engine splits a straddler's load equally between the
   tiles (lost-footing: 75% each).

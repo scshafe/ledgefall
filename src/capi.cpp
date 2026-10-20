@@ -28,14 +28,30 @@ extern "C" {
 lf_match* lf_match_create(int players, int stocks) { return lf_match_create_with(players, stocks, 1, nullptr, LF_STAGE_PRACTICE); }
 
 lf_match* lf_match_create_with(int players, int stocks, uint32_t seed, const uint8_t* characters, int stage) {
-  if (stage < 0 || stage >= LF_STAGE_COUNT) return nullptr;
-  Setup setup;
-  setup.stage = static_cast<StageId>(stage);
+  lf_setup setup{};
   setup.players = players;
   setup.stocks = stocks;
   setup.seed = seed;
-  if (characters != nullptr && players >= kMinPlayers && players <= kMaxPlayers) {
-    for (int i = 0; i < players; ++i) setup.characters[static_cast<std::size_t>(i)] = static_cast<Character>(characters[i]);
+  setup.stage = stage;
+  for (int i = 0; i < 4; ++i) {
+    setup.teams[i] = -1;
+    // Seats without a character of their own get Mason, Glim, Pip and Fuse in turn.
+    setup.characters[i] = characters != nullptr && i < players ? characters[i] : static_cast<uint8_t>(i);
+  }
+  return lf_match_create_setup(&setup);
+}
+
+lf_match* lf_match_create_setup(const lf_setup* in) {
+  if (in == nullptr || in->stage < 0 || in->stage >= LF_STAGE_COUNT) return nullptr;
+  Setup setup;
+  setup.players = in->players;
+  setup.stocks = in->stocks;
+  setup.seed = in->seed;
+  setup.stage = static_cast<StageId>(in->stage);
+  for (std::size_t i = 0; i < 4; ++i) {
+    setup.characters[i] = static_cast<Character>(in->characters[i]);
+    setup.teams[i] = in->teams[i];
+    setup.seat_stocks[i] = in->seat_stocks[i];
   }
   auto rules = ledgefall::make_rules(setup);
   if (!rules) return nullptr;
@@ -43,9 +59,9 @@ lf_match* lf_match_create_with(int players, int stocks, uint32_t seed, const uin
   if (m == nullptr) return nullptr;
   m->rules = *rules;
   m->state = ledgefall::make_state(m->rules);
-  m->bots.assign(static_cast<std::size_t>(players), {});
-  m->is_bot.assign(static_cast<std::size_t>(players), 0);
-  m->inputs.assign(static_cast<std::size_t>(players), {});
+  m->bots.assign(static_cast<std::size_t>(in->players), {});
+  m->is_bot.assign(static_cast<std::size_t>(in->players), 0);
+  m->inputs.assign(static_cast<std::size_t>(in->players), {});
   return m;
 }
 
@@ -82,6 +98,7 @@ int lf_match_players(const lf_match* m) { return m ? static_cast<int>(m->state.p
 uint32_t lf_match_tick(const lf_match* m) { return m ? m->state.world.frame : 0; }
 int lf_match_over(const lf_match* m) { return m && m->state.over ? 1 : 0; }
 int lf_match_winner(const lf_match* m) { return m && m->state.over ? m->state.winner : -1; }
+int lf_match_winning_team(const lf_match* m) { return m ? ledgefall::winning_team(m->rules, m->state) : -1; }
 uint64_t lf_match_hash(const lf_match* m) { return m ? ledgefall::hash(m->state) : 0; }
 
 int lf_match_player(const lf_match* m, int seat, lf_player* out) {
@@ -92,6 +109,7 @@ int lf_match_player(const lf_match* m, int seat, lf_player* out) {
   out->character = static_cast<int32_t>(m->rules.setup.characters[static_cast<std::size_t>(seat)]);
   for (int i = 0; i < 3; ++i) out->cooldown[i] = p.cooldown[static_cast<std::size_t>(i)];
   out->place = p.place;
+  out->team = m->rules.setup.teams[static_cast<std::size_t>(seat)];
   out->kos = p.stats.kos;
   out->falls = p.stats.falls;
   return 1;
