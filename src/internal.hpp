@@ -111,6 +111,9 @@ void apply_modifiers(State& state);
 // Stage wind (a gale), before the engine steps.
 void apply_gale(const Rules& rules, State& state);
 
+// The conveyors: set each tile's belt speed for this tick (running one way, stopped, or the other way).
+void apply_belts(const Rules& rules, State& state);
+
 // Whether the tide has swallowed a player standing at (x, y).
 bool drowned(const State& state, const fp::EntityState& e);
 

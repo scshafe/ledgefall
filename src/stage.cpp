@@ -51,6 +51,7 @@ struct Builder {
     int amp_px = 0, period = 0, phase_percent = 0;
   };
   Bob bob{};
+  Fixed belt{};  // the conveyor speed of the rows being added (units a tick, + right)
 
   void tile(Fixed left, Fixed right, Fixed top) {
     fp::PlatformDef p;
@@ -68,6 +69,8 @@ struct Builder {
     p.respawn_frames = kTileRespawnTicks;
     r.engine.stage.platforms.push_back(p);
     r.slab_hp.push_back(0);
+    r.belts.resize(r.engine.stage.platforms.size() - 1, Fixed::zero());
+    r.belts.push_back(belt);
   }
 
   void slab(Fixed left, Fixed right, Fixed top, int hp) {
@@ -110,6 +113,12 @@ struct Builder {
     h.every_lo = lo, h.every_hi = hi, h.warn = warn;
     h.rise = rise, h.hold = hold, h.fall = fall;
     h.low = y(low_px), h.high = y(high_px);
+    r.hazards.push_back(h);
+  }
+  void belts(int lo, int hi, int warn) {
+    HazardSpec h;
+    h.type = HazardType::Belts;
+    h.every_lo = lo, h.every_hi = hi, h.warn = warn;
     r.hazards.push_back(h);
   }
   void gale(int lo, int hi, int warn, int duration, int force_thousandths_px) {
@@ -180,6 +189,26 @@ void tide(Rules& r) {  // "Tide Pools": low stone islands, until the tide comes 
   b.spawn(470, 320), b.spawn(1130, 320), b.spawn(800, 450), b.spawn(800, 190);
   b.tide(720, 900, 120, 150, 240, 150, 960, 735);
   b.comet({530}, 540, 840, 90, 750);
+}
+
+void belts(Rules& r) {  // "Conveyor Sky": moving walkways; they stop, then run the other way
+  Builder b{r};
+  struct Row {
+    int x, y, n, belt_hundredths_px;  // lost-footing px/tick x 100, + right
+  };
+  for (const Row& row : {Row{240, 650, 7, 120}, {1024, 650, 7, -120}, {380, 520, 5, -140}, {980, 520, 5, 140}, {560, 390, 10, 100},
+                         {300, 260, 4, -120}, {1108, 260, 4, 120}}) {
+    b.belt = fx100(row.belt_hundredths_px * 32 / 100);
+    b.row(row.x, row.y, row.n);
+  }
+  b.belt = Fixed::zero();
+  b.slab_px(700, 650, 200);
+  b.slab_px(130, 480, 140);
+  b.slab_px(1330, 480, 140);
+  b.blast();
+  b.spawn(470, 440), b.spawn(1130, 440), b.spawn(800, 310), b.spawn(800, 190);
+  b.belts(420, 600, 75);
+  b.comet({650, 480}, 540, 780, 90, 800);
 }
 
 void swell(Rules& r) {  // "Sinking Ship": decks heave on the swell, halves out of step
@@ -256,9 +285,11 @@ std::optional<Rules> make_rules(const Setup& setup) {
     case StageId::Tide: tide(r); break;
     case StageId::Gale: gale(r); break;
     case StageId::Swell: swell(r); break;
+    case StageId::Belts: belts(r); break;
   }
   for (int i = 0; i < setup.players; ++i) r.engine.params.push_back(detail::movement_for(setup.characters[static_cast<std::size_t>(i)]));
   r.start_clock.resize(r.engine.stage.platforms.size(), 0);
+  r.belts.resize(r.engine.stage.platforms.size(), Fixed::zero());
   if (r.engine.stage.platforms.size() > static_cast<std::size_t>(kMaxTiles) || r.hazards.size() > static_cast<std::size_t>(kMaxHazardSpecs)) return std::nullopt;
   return r;
 }

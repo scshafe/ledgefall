@@ -47,8 +47,8 @@ constexpr int kCharacterCount = 7;
 constexpr int kMoveSlots = 3;
 
 // The stages (lost-footing's, "Stages and hazards"; Practice is a plain three-tier test floor).
-enum class StageId : std::uint8_t { Practice, Yard, Quarry, Tide, Gale, Swell };
-constexpr int kStageCount = 6;
+enum class StageId : std::uint8_t { Practice, Yard, Quarry, Tide, Gale, Swell, Belts };
+constexpr int kStageCount = 7;
 
 // What a match is set up with (the lobby's choices).
 struct Setup {
@@ -69,7 +69,7 @@ bool valid(const Setup& s) noexcept;
 // What a stage does to the players on a rhythm (lost-footing, "Stages and
 // hazards"): comets skim the lanes, rocks fall, the tide rises, a gale blows.
 // Every hazard is announced before it acts.
-enum class HazardType : std::uint8_t { Comet, Rockfall, Tide, Gale };
+enum class HazardType : std::uint8_t { Comet, Rockfall, Tide, Gale, Belts };
 
 struct HazardSpec {
   HazardType type = HazardType::Comet;
@@ -93,6 +93,7 @@ struct Rules {
   std::vector<std::uint8_t> slab_hp;  // per stage platform: hit points of a sturdy slab, 0 for a crumble tile
   std::vector<HazardSpec> hazards;
   std::vector<std::int32_t> start_clock;  // per stage platform: where its motion cycle starts
+  std::vector<fp::Fixed> belts;           // per stage platform: its conveyor speed (units a tick, + right), 0 for none
 };
 
 // Nullopt if the setup is not valid.
@@ -208,6 +209,7 @@ constexpr int kMaxHazards = 12;
 
 enum class TidePhase : std::uint8_t { Calm, Warn, Rise, Hold, Fall };
 enum class GalePhase : std::uint8_t { Off, Warn, Blow };
+enum class BeltPhase : std::uint8_t { Run, Stop };  // the conveyors run, then stop for a warning, then run the other way
 
 struct Hazards {
   std::array<std::int16_t, kMaxHazardSpecs> timers{};  // ticks until each spec next fires
@@ -218,6 +220,9 @@ struct Hazards {
   GalePhase gale = GalePhase::Off;
   std::int8_t gale_dir = 0;
   std::int16_t gale_timer = 0;
+  BeltPhase belts = BeltPhase::Run;
+  std::int8_t belts_sign = 1;
+  std::int16_t belts_timer = 0;
 };
 
 // Who last put stress on a tile, so a player it drops is credited to them.

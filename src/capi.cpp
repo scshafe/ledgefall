@@ -158,6 +158,7 @@ int lf_match_platform(const lf_match* m, int index, lf_platform* out) {
   out->sturdy = m->rules.slab_hp[i] != 0 ? 1 : 0;
   out->hp = m->state.slab_hp[i];
   out->stress = s.stress.raw();
+  out->belt = s.belt.raw();
   return 1;
 }
 
@@ -240,6 +241,8 @@ void lf_match_weather(const lf_match* m, lf_weather* out) {
   out->tide_level = h.tide_level.raw();
   out->gale_phase = static_cast<int32_t>(h.gale);
   out->gale_dir = h.gale_dir;
+  out->belts_phase = static_cast<int32_t>(h.belts);
+  out->belts_sign = h.belts_sign;
 }
 
 size_t lf_match_replay_size(const lf_match* m) { return m ? ledgefall::encode(m->recorder.finish(m->state)).size() : 0; }

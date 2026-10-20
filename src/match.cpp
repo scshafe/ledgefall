@@ -192,6 +192,7 @@ void step(const Rules& rules, State& state, std::span<const Input> inputs) {
 
   std::vector<fp::Intent> intents(n);
   for (std::size_t i = 0; i < n && i < inputs.size(); ++i) intents[i] = to_intent(inputs[i]);
+  detail::apply_belts(rules, state);
   detail::apply_modifiers(state);
   detail::apply_gale(rules, state);
   detail::apply_wind_and_drill(rules, state, intents);
