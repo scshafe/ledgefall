@@ -92,9 +92,10 @@ difference will be absorbed.
   Everything else in
   `docs/lost-footing-brief.md`'s table follows one move at a time. Lost-footing
   pixels become units at about 0.32.
-- Engine asks for the rest of the kit: one-way placeables (ledge, vine leaves,
-  decoys; fighter-physics#21) and per-entity movement modifiers (glue, thorns;
-  #22, worked around by scaling a copy of the config).
+- Movement modifiers (the engine's per-entity `Modifier`, set each tick in
+  `apply_modifiers`): a stomp slows ground speed to 0.55, glue cuts the jump to
+  0.55, brambles halve acceleration and cut the jump to 0.8 (their speed is the
+  patch's).
 - Engine bug found: fighter-physics#23 (`restore` rejects a world with a doomed
   tile); rollback cannot ship until it is fixed and the pin bumped.
 - Bots use their kit (`src/bot.cpp`): they plan a move that suits the situation

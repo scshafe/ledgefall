@@ -187,6 +187,7 @@ void step(const Rules& rules, State& state, std::span<const Input> inputs) {
 
   std::vector<fp::Intent> intents(n);
   for (std::size_t i = 0; i < n && i < inputs.size(); ++i) intents[i] = to_intent(inputs[i]);
+  detail::apply_modifiers(state);
   detail::apply_gale(rules, state);
   detail::apply_wind_and_drill(rules, state, intents);
   std::vector<fp::Vec2> vel_before(n);
@@ -196,23 +197,7 @@ void step(const Rules& rules, State& state, std::span<const Input> inputs) {
     support_before[i] = state.world.entities[i].support;
   }
 
-  // A slowed player (stomped) moves at a share of their speeds this tick.
-  bool slowed = false;
-  for (const PlayerState& p : state.players) slowed = slowed || p.slow > 0;
-  if (slowed) {
-    fp::Config work = rules.engine;
-    for (std::size_t i = 0; i < n; ++i) {
-      if (state.players[i].slow <= 0) continue;
-      fp::MovementParams& m = work.params[i];
-      const Fixed share = detail::fx100(55);
-      m.walk_max = m.walk_max * share;
-      m.dash_max = m.dash_max * share;
-      m.run_max = m.run_max * share;
-    }
-    fp::step(work, state.world, intents, events);
-  } else {
-    fp::step(rules.engine, state.world, intents, events);
-  }
+  fp::step(rules.engine, state.world, intents, events);
   for (PlayerState& p : state.players) {
     p.slow = static_cast<std::int16_t>(std::max(p.slow - 1, 0));
     p.invuln = static_cast<std::int16_t>(std::max(p.invuln - 1, 0));

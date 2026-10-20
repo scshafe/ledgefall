@@ -91,6 +91,10 @@ int rand_int(State& s, int lo, int hi);
 // Stage hazards: fire on their rhythm, warn, act. After the engine has stepped.
 void update_hazards(const Rules& rules, State& state, fp::Events& scratch);
 
+// What slows or hampers a player this tick, as the engine's per-entity modifier: a stomp, standing in
+// glue (jump x0.55) or in brambles (accel x0.5, jump x0.8). Before the engine steps.
+void apply_modifiers(State& state);
+
 // Stage wind (a gale), before the engine steps.
 void apply_gale(const Rules& rules, State& state);
 
