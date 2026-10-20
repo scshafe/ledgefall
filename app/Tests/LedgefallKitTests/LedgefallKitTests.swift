@@ -391,7 +391,7 @@ final class SeatingCapacityTests: XCTestCase {
 final class OnlineSetupTests: XCTestCase {
     func testRoomNameRoundTrips() throws {
         let setup = OnlineSetup(arena: .tide, stocks: 4, seed: 4_000_000_001, fighters: [.ferro, .mason, .dab], teams: [0, nil, 1])
-        XCTAssertEqual(setup.roomName, "lf1 S3 K4 D4000000001 C603 T0n1")
+        XCTAssertEqual(setup.roomName, "lf1 S3 K4 D4000000001 C604 T0n1")
         XCTAssertLessThanOrEqual(setup.roomName.count, 40)  // the lobby's limit for a room name
         XCTAssertEqual(OnlineSetup(roomName: setup.roomName), setup)
         let widest = OnlineSetup(arena: .belts, stocks: 5, seed: UInt32.max, fighters: [.ferro, .ferro, .ferro, .ferro], teams: [0, 1, 0, 1])
