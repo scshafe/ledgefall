@@ -179,8 +179,8 @@ the app do not.
 - `ledgefall_bot` plays through the real lobby and server (find or create a
   room, take a seat, ready, join over UDP, play with the core's bot AI until the
   match ends); `scripts/e2e` runs the real executables end to end.
-- The deployable stack is a draft under `deploy/stack/` (README: what the host
-  needs). One image, built by the root `Dockerfile`, holds the lobby and the
+- The deployable stack is under `deploy/stack/` (README: what the host has),
+  deployed to the PC by the runner lane (`dev.toml [deploy]`). One image, built by the root `Dockerfile`, holds the lobby and the
   server; both run in the Tailscale sidecar's network namespace.
 - The client end (`include/ledgefall/online.hpp`, `src/online.cpp`, `src/capi_net.cpp`):
   `OnlineMatch` is netplay-kit's `ClientSession` running the core, and the C face

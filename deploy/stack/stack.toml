@@ -1,4 +1,6 @@
-# The stack's data (stack.toml, schema 1), after scshafe-dev's template. DRAFT: see README.md.
+# The stack's data (stack.toml, schema 1), after scshafe-dev's template. The host's tools/stack reads
+# it as data, never as shell, and rejects an unknown key; `dev check` (DEPLOY-03) checks the same
+# schema. Secrets are named here and never valued: the owner's provisioning places them on the host.
 schema = 1
 
 [deploy]
@@ -19,6 +21,6 @@ tailscale = true                     # the node identity (always, with a sidecar
 paths = []                           # no app data: rooms and matches live in memory
 
 [env]
-required = ["NPK_PUBLIC_UDP"]
+required = ["TS_AUTHKEY", "NPK_PUBLIC_UDP"]   # TS_AUTHKEY: first start only, blanked after the join
 generated = ["NPK_CONTROL_SECRET"]
-owner = ["TS_AUTHKEY"]
+owner = []

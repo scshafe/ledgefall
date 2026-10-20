@@ -11,8 +11,13 @@
 # and the server reaches the lobby by its service name.
 
 FROM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS build
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends g++ cmake make git ca-certificates \
+# apt retries and times out generously, and `apt-get update` fails the build on any index error
+# (APT::Update::Error-Mode=any): the PC's link can drop a connection mid-transfer under load, and apt
+# would otherwise ignore a partial index and fail later with a misleading error.
+RUN apt-get -o Acquire::Retries=10 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 \
+      -o APT::Update::Error-Mode=any update \
+    && apt-get -o Acquire::Retries=10 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 \
+      install -y --no-install-recommends g++ cmake make git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY CMakeLists.txt ./

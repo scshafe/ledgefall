@@ -1,8 +1,13 @@
-# The ledgefall stack (draft)
+# The ledgefall stack
 
-netplay-kit's lobby and ledgefall's game server, behind one Tailscale node. This is the
-agent's draft for the owner session to wire up; nothing here is deployed, and `dev.toml` has no
-`[deploy]` table yet.
+netplay-kit's lobby and ledgefall's game server, behind one Tailscale node `ledgefall`, on the PC.
+It reaches production through the runner lane (`dev.toml [deploy]`, `.github/workflows/deploy.yml`;
+scshafe/infra `docs/platform/agent-deploy.md`): a merge to `main` is verified on a GitHub-hosted
+runner, then deployed by this repository's self-hosted runner through the host's entrypoint. The
+host's allowances are infra's `stacks/ledgefall/host.conf`.
+
+- Lobby: `https://ledgefall.<tailnet>/` (tailnet only; never Funnel). Game server: UDP 7777 on the
+  node.
 
 ```
  player ---HTTPS (tailscale serve)---> lobby 127.0.0.1:8080  <---register, results, assign--->  game server
@@ -20,7 +25,7 @@ agent's draft for the owner session to wire up; nothing here is deployed, and `d
 - `serve.json` proxies HTTPS on the node's name to the lobby (`127.0.0.1:8080`, as the validator
   requires).
 
-## What the host needs (for the owner session)
+## What the host has
 
 1. **A stack and a node**: stack `ledgefall`, tailnet node `ledgefall` (the names in `compose.yaml`, change
    them together), `door = "none"` (the lobby has no sign-in yet; the lobby and the game are reachable by
@@ -32,10 +37,10 @@ agent's draft for the owner session to wire up; nothing here is deployed, and `d
    failed).
 3. **UDP 7777 inbound** on the node's tailnet address, for the game server. With the tailnet policy on
    allow-all it needs nothing; when the policy is narrowed it needs a grant for the players, for example
-   `{src: [<players>], dst: ["tag:<ledgefall>"], ip: ["udp:7777"]}` (netplay-kit's docs/design.md "Network
+   `{src: [<players>], dst: ["tag:ledgefall"], ip: ["udp:7777"]}` (netplay-kit's docs/design.md "Network
    path"). TCP 443 on the node is `tailscale serve`'s, as for any stack.
-4. **Secrets and values by name** (`env.example`, `stack.toml [env]`; the agent has none and puts none in
-   a file):
+4. **Secrets and values by name** (`.env.example`, `stack.toml [env]`; the agent has none and puts none in
+   a file; the owner places them in the host's `/srv/stacks/ledgefall/.env`):
    - `NPK_CONTROL_SECRET`: generated, 16+ random characters, shared by the lobby and the game server
      (compared in constant time, never logged, never in a URL or a command line);
    - `NPK_PUBLIC_UDP`: required, `ledgefall.<tailnet>.ts.net:7777`: what the lobby tells players to
@@ -45,12 +50,13 @@ agent's draft for the owner session to wire up; nothing here is deployed, and `d
 5. **The image build** (`docker build .` from the repository root) needs the runner to reach GitHub
    (CMake fetches fighter-physics and netplay-kit at their pinned commits) and Debian's package mirror.
    The base image is pinned by digest.
-6. **Health**: `stack.toml` probes `/api/status` (the lobby has no `/healthz`; it answers
-   `{"rooms":..,"game_servers":..}` without a secret).
-7. **A `dev.toml [deploy]` table and the runner lane's workflow**: only the owner session can add them
-   (`dev adopt --add-missing --lane runner --stack ledgefall --host pc --layout app --node ledgefall
-   --door none` renders the usual files; the existing `compose.yaml` here would need merging). I did not
-   add them.
+6. **Health**: `stack.toml` probes `/api/status` through the node's name (the lobby has no
+   `/healthz`; it answers `{"rooms":..,"game_servers":..}` without a secret), and the lobby's compose
+   healthcheck asks the same path inside the namespace.
+7. **The runner lane**: `dev.toml [deploy]` and `.github/workflows/deploy.yml` (rendered by
+   `dev adopt --add-missing --lane runner --stack ledgefall --host pc --layout app --node ledgefall
+   --door none`), the self-hosted runner registered on the PC for this repository, and the tailnet
+   tag `tag:ledgefall` (infra `tailnet/policy.hujson`) on the sidecar's auth key.
 
 ## Known limits
 
