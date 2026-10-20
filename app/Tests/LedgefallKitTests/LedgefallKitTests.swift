@@ -312,7 +312,8 @@ final class FlowTests: XCTestCase {
     func testOnlineJoiningFlow() {
         var flow = Flow()
         go(&flow, to: Flow.modeRow)
-        flow.handle(.left)  // wraps to the last mode
+        flow.handle(.right)
+        flow.handle(.right)
         XCTAssertEqual(flow.mode, .join)
         go(&flow, to: flow.startRow)
         XCTAssertEqual(flow.handle(.confirm), .browseRooms)
