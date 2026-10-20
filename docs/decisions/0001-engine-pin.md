@@ -32,3 +32,7 @@ every hash.
   placeable slots, so `tests/golden/determinism_hashes.txt` was regenerated.
 - `3c6942ce50c86380d84245003181379bd4f20f01`: fighter-physics#25, restore accepts a doomed tile (#23). Snapshot
   format and pinned hashes unchanged; nothing else in the engine changed.
+- `5e0e2cf6a7f4bfd97891168ea1c59b9b31fc21b3`: conveyor platforms (#24), per-entity movement modifiers (#22), one-way
+  placeables with an optional single-entity filter (#21). The engine's snapshot
+  format is now 8 and its pinned hashes changed, so ours did too: the golden
+  trace is regenerated (same match, same winner and tick count).
