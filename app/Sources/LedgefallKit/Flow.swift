@@ -11,6 +11,8 @@ public enum Phase: Equatable {
     case results(winner: Int?)
     case browsing    // online: choosing among the open rooms
     case connecting  // online: opening or joining a room, and waiting for the match to start
+    case replays     // choosing a saved replay
+    case watching    // watching one
 }
 
 /// What the host must do after a menu action.
@@ -21,13 +23,16 @@ public enum FlowEffect: Equatable {
     case browseRooms // online: start listing the open rooms
     case joinRoom(String)  // online: take a seat in this room
     case leaveOnline // online: drop the room or the match; back to the setup screen
+    case listReplays // read the saved replays into the list
+    case watchReplay(Int) // watch the replay at this index of the list
+    case stopWatching     // back to the setup screen
 }
 
 /// Where a match is played.
 public enum PlayMode: Int, CaseIterable, Equatable {
-    case local, host, join
+    case local, host, join, replay
 
-    public var name: String { ["Local, against bots and friends", "Online: host a room", "Online: join a room"][rawValue] }
+    public var name: String { ["Local, against bots and friends", "Online: host a room", "Online: join a room", "Watch a saved replay"][rawValue] }
 }
 
 /// How the seats are split into teams (a match needs two sides; teams of one seat each is "off").
@@ -64,6 +69,10 @@ public struct Flow: Equatable {
     public private(set) var roomIndex = 0
     public private(set) var status = ""
     public private(set) var failed = false
+    /// The saved replays (newest first), the one chosen, and whether the one being watched is paused.
+    public private(set) var replays: [ReplayInfo] = []
+    public private(set) var replayIndex = 0
+    public private(set) var watchPaused = false
     public private(set) var players = 2
     public private(set) var stocks = 3
     public private(set) var arena: Arena = .yard
@@ -102,6 +111,11 @@ public struct Flow: Equatable {
                         rooms = []
                         roomIndex = 0
                         return .browseRooms
+                    case .replay:
+                        phase = .replays
+                        replays = []
+                        replayIndex = 0
+                        return .listReplays
                     }
                 }
                 selectedRow += 1
@@ -154,6 +168,29 @@ public struct Flow: Equatable {
                 return .leaveOnline
             default: break
             }
+        case .replays:
+            switch action {
+            case .up: replayIndex = max(replayIndex - 1, 0)
+            case .down: replayIndex = max(min(replayIndex + 1, replays.count - 1), 0)
+            case .confirm:
+                guard replays.indices.contains(replayIndex) else { break }
+                phase = .watching
+                watchPaused = false
+                return .watchReplay(replayIndex)
+            case .back:
+                phase = .setup
+                return .stopWatching
+            default: break
+            }
+        case .watching:
+            switch action {
+            case .confirm, .pause: watchPaused.toggle()
+            case .back:
+                phase = .replays
+                watchPaused = false
+                return .listReplays
+            default: break
+            }
         case .connecting:
             if action == .back || (action == .confirm && failed) {
                 leaveOnline()
@@ -184,6 +221,13 @@ public struct Flow: Equatable {
         let chosen = rooms.indices.contains(roomIndex) ? rooms[roomIndex].id : nil
         rooms = new
         roomIndex = chosen.flatMap { id in new.firstIndex { $0.id == id } } ?? min(roomIndex, max(new.count - 1, 0))
+    }
+
+    /// The saved replays, read from disk when the list was asked for.
+    public mutating func setReplays(_ new: [ReplayInfo]) {
+        guard phase == .replays else { return }
+        replays = new
+        replayIndex = min(replayIndex, max(new.count - 1, 0))
     }
 
     public mutating func setStatus(_ text: String) {

@@ -13,11 +13,13 @@ struct OverlayView: View {
 
     var body: some View {
         ZStack {
-            if model.flow.phase != .setup && model.flow.phase != .browsing && model.flow.phase != .connecting { stocksBar }
+            if ![.setup, .browsing, .connecting, .replays].contains(model.flow.phase) { stocksBar }
             switch model.flow.phase {
             case .setup: setupPanel
             case .browsing: browsingPanel
             case .connecting: connectingPanel
+            case .replays: replaysPanel
+            case .watching: watchingBar
             case .playing: EmptyView()
             case .paused: panel(title: "Paused", lines: ["Return / A: resume", "Esc / B: quit to setup"])
             case .results(let winner): resultsPanel(winner)
@@ -92,6 +94,51 @@ struct OverlayView: View {
         let flow = model.flow
         return panel(title: flow.failed ? "Could not play online" : "Online",
                      lines: [flow.status, flow.failed ? "Return / A or Esc / B: back" : "Esc / B: leave"])
+    }
+
+    private var replaysPanel: some View {
+        let flow = model.flow
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("Saved replays").font(.system(size: 34, weight: .bold))
+            if flow.replays.isEmpty {
+                Text("None yet: every match you play is saved.").font(.title3)
+            }
+            ForEach(Array(flow.replays.prefix(12).enumerated()), id: \.element.file) { index, info in
+                HStack {
+                    Text(index == flow.replayIndex ? "▸" : " ")
+                    Text(info.date.formatted(date: .abbreviated, time: .shortened)).foregroundColor(.secondary)
+                    Text(info.title)
+                }
+                .font(.title3)
+                .foregroundColor(index == flow.replayIndex ? .yellow : .white)
+            }
+            Text("Arrows or d-pad to choose, Return or A to watch, Esc or B to go back.")
+                .font(.footnote).foregroundColor(.secondary)
+        }
+        .padding(28)
+        .background(Color.black.opacity(0.7))
+        .cornerRadius(12)
+        .foregroundColor(.white)
+    }
+
+    private var watchingBar: some View {
+        VStack {
+            Spacer()
+            HStack(spacing: 16) {
+                Text("Replay").bold()
+                if let w = model.watchTicks {
+                    Text("\(w.played / 60 / 60):" + String(format: "%02d", w.played / 60 % 60) + " of \(w.total / 60 / 60):" + String(format: "%02d", w.total / 60 % 60))
+                        .monospacedDigit()
+                }
+                Text(model.flow.watchPaused ? "paused (Return resumes)" : "Return pauses")
+                Text("Esc leaves").foregroundColor(.secondary)
+            }
+            .padding(10)
+            .background(Color.black.opacity(0.55))
+            .cornerRadius(8)
+            .padding(.bottom, 14)
+        }
+        .foregroundColor(.white)
     }
 
     private var browsingPanel: some View {

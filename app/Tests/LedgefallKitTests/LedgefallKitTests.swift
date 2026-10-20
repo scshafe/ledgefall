@@ -586,3 +586,98 @@ final class OnlineSessionTests: XCTestCase {
         XCTAssertEqual(session.match.tick, 0)
     }
 }
+
+
+final class ReplayLibraryTests: XCTestCase {
+    private func folder() throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("ledgefall-replays-\(UUID().uuidString)")
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+        return url
+    }
+
+    private func playedMatch(seed: UInt32) throws -> Match {
+        let match = try XCTUnwrap(Match(players: 2, stocks: 1, seed: seed, characters: [.fuse, .pip], arena: .yard))
+        for seat in 0..<2 { match.setBot(seat: seat, level: .hard) }
+        var ticks = 0
+        while !match.isOver && ticks < 6 * 60 * 60 {
+            match.step([])
+            ticks += 1
+        }
+        XCTAssertTrue(match.isOver)
+        return match
+    }
+
+    func testSaveListAndLoad() throws {
+        let library = ReplayLibrary(folder: try folder())
+        XCTAssertEqual(library.list(), [])  // no folder yet
+        let a = try XCTUnwrap(try playedMatch(seed: 1).replayData())
+        let b = try XCTUnwrap(try playedMatch(seed: 2).replayData())
+        let first = try library.save(a, at: Date(timeIntervalSince1970: 1_000))
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 1_000)], ofItemAtPath: first.path)
+        let second = try library.save(b, at: Date(timeIntervalSince1970: 1_000))  // the same second: a distinct file
+        XCTAssertNotEqual(first, second)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 2_000)], ofItemAtPath: second.path)
+        try Data("not a replay".utf8).write(to: library.folder.appendingPathComponent("junk.lfreplay"))
+        try Data("x".utf8).write(to: library.folder.appendingPathComponent("notes.txt"))
+
+        let list = library.list()
+        XCTAssertEqual(list.count, 2)  // the junk and the text file are skipped
+        XCTAssertEqual(list.first?.file, second.lastPathComponent)  // newest first
+        XCTAssertEqual(list.first?.setup.arena, .yard)
+        XCTAssertEqual(list.first?.setup.fighters, [.fuse, .pip])
+        XCTAssertTrue(list.first?.title.hasPrefix("Crumble Yard, 1 stocks, Fuse / Pip, ") ?? false)
+        let replay = try XCTUnwrap(library.load(list[0]))
+        XCTAssertTrue(replay.isGenuine)
+    }
+
+    func testWatchingPlaysTheMatchBackToTheSameEnd() throws {
+        let match = try playedMatch(seed: 5)
+        let replay = try XCTUnwrap(Replay(data: try XCTUnwrap(match.replayData())))
+        let watch = try XCTUnwrap(ReplayWatch(replay))
+        XCTAssertEqual(watch.progress, 0)
+        var now = 100.0
+        watch.advance(to: now)  // sets the clock
+        watch.paused = true
+        now += 2
+        watch.advance(to: now)
+        XCTAssertEqual(watch.match.tick, 0)  // paused: nothing runs
+        watch.paused = false
+        var guardTicks = 0
+        while !watch.finished && guardTicks < 100_000 {
+            now += 1.0 / 60 * 3  // three ticks a frame
+            watch.advance(to: now)
+            guardTicks += 1
+        }
+        XCTAssertTrue(watch.finished)
+        XCTAssertEqual(watch.match.tick, replay.ticks)
+        XCTAssertEqual(watch.match.hash, match.hash)
+        XCTAssertEqual(watch.progress, 1)
+    }
+}
+
+extension FlowTests {
+    func testReplayBrowsingFlow() {
+        var flow = Flow()
+        go(&flow, to: Flow.modeRow)
+        flow.handle(.left)  // local -> replay (wraps round)
+        XCTAssertEqual(flow.mode, .replay)
+        go(&flow, to: flow.startRow)
+        XCTAssertEqual(flow.handle(.confirm), .listReplays)
+        XCTAssertEqual(flow.phase, .replays)
+        XCTAssertNil(flow.handle(.confirm))  // nothing saved yet
+        let setup = OnlineSetup(arena: .quarry, stocks: 3, seed: 1, fighters: [.mason, .glim], teams: [nil, nil])
+        let infos = (0..<3).map { ReplayInfo(file: "\($0).lfreplay", date: Date(timeIntervalSince1970: Double($0)), setup: setup, ticks: 600 * ($0 + 1)) }
+        flow.setReplays(infos)
+        flow.handle(.down)
+        XCTAssertEqual(flow.handle(.confirm), .watchReplay(1))
+        XCTAssertEqual(flow.phase, .watching)
+        flow.handle(.confirm)
+        XCTAssertTrue(flow.watchPaused)
+        flow.handle(.pause)
+        XCTAssertFalse(flow.watchPaused)
+        XCTAssertEqual(flow.handle(.back), .listReplays)  // back to the list
+        XCTAssertEqual(flow.phase, .replays)
+        XCTAssertEqual(flow.handle(.back), .stopWatching)
+        XCTAssertEqual(flow.phase, .setup)
+    }
+}
