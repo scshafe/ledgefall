@@ -3,14 +3,23 @@
 # and run every test with CMake and CTest. CI runs the same command.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-# The core is linked into the app, so it targets the app's macOS floor (app/Package.swift).
-extra=()
-if [ "$(uname)" = Darwin ]; then extra=(-DCMAKE_OSX_DEPLOYMENT_TARGET=13.0); fi
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug ${extra[@]+"${extra[@]}"}
-cmake --build build --parallel
-ctest --test-dir build --output-on-failure
 
-# The macOS app builds only on macOS (CI's macos job, the owner's Mac).
 if [ "$(uname)" = Darwin ]; then
+  # The core is linked into the app, so it targets the app's macOS floor (app/Package.swift). The
+  # server (netplay-kit) needs a newer one (it uses std::from_chars for doubles), so it is built and
+  # tested in a build of its own, at the host's own target.
+  cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 -DLEDGEFALL_BUILD_SERVER=OFF
+  cmake --build build --parallel
+  ctest --test-dir build --output-on-failure
+
+  cmake -S . -B build-server -DCMAKE_BUILD_TYPE=Debug -DLEDGEFALL_BUILD_SERVER=ON
+  cmake --build build-server --parallel
+  ctest --test-dir build-server --output-on-failure
+
+  # The macOS app builds only on macOS (CI's macos job, the owner's Mac).
   ./scripts/build-app
+else
+  cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+  cmake --build build --parallel
+  ctest --test-dir build --output-on-failure
 fi
