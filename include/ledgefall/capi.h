@@ -157,7 +157,9 @@ void lf_match_weather(const lf_match* m, lf_weather* out);
 
 /* The match so far as a replay: its setup and every seat's input on every tick (bots' included),
  * ending with the state's hash. `lf_match_replay_write` returns the bytes written (0 if `cap` is too small;
- * `lf_match_replay_size` says how many are needed). */
+ * `lf_match_replay_size` says how many are needed). For the view of an online match (lf_net_view) the size is
+ * 0 until the match is over and the session has confirmed every tick of it; the replay is then the canonical
+ * input, the same one every player's client keeps. */
 size_t lf_match_replay_size(const lf_match* m);
 size_t lf_match_replay_write(const lf_match* m, uint8_t* buf, size_t cap);
 

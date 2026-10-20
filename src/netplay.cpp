@@ -11,7 +11,23 @@ void NetplaySimulation::step(npk::session::Frame, std::span<const std::uint8_t> 
   for (std::size_t i = 0; i < in.size(); ++i) {
     if ((i + 1) * kInputBytes > inputs.size() || !decode(inputs.subspan(i * kInputBytes, kInputBytes), in[i])) in[i] = Input{};
   }
+  if (!state_.over && state_.world.frame < kMaxReplayTicks) {  // a rollback steps a frame again: the latest stepping stands
+    inputs_.resize(static_cast<std::size_t>(state_.world.frame) * in.size());
+    inputs_.insert(inputs_.end(), in.begin(), in.end());
+  }
   ledgefall::step(rules_, state_, in);
+}
+
+std::optional<Replay> NetplaySimulation::replay() const {
+  const std::size_t per_tick = state_.players.size();
+  if (!state_.over || per_tick == 0 || state_.world.frame >= kMaxReplayTicks || inputs_.size() != state_.world.frame * per_tick) return std::nullopt;
+  Replay r;
+  r.setup = rules_.setup;
+  r.ticks = state_.world.frame;
+  r.inputs = inputs_;
+  r.final_hash = ledgefall::hash(state_);
+  if (!verify(r)) return std::nullopt;
+  return r;
 }
 
 void NetplaySimulation::snapshot(std::vector<std::uint8_t>& out) const { ledgefall::snapshot(state_, out); }

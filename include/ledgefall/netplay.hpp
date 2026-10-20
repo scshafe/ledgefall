@@ -7,6 +7,7 @@
 #include <optional>
 
 #include "ledgefall/match.hpp"
+#include "ledgefall/replay.hpp"
 #include "npk/json/json.hpp"
 #include "npk/session/simulation.hpp"
 
@@ -32,9 +33,16 @@ class NetplaySimulation final : public npk::session::Simulation {
   const Rules& rules() const { return rules_; }
   const State& state() const { return state_; }
 
+  // The match as a replay, once it is over: every seat's input for every tick as this simulation last
+  // stepped it. That is the canonical input only for frames the session has confirmed, so the caller
+  // asks only once it has (OnlineMatch::replay). Nothing if the inputs do not reproduce the state, as
+  // after a resync, which leaves frames this simulation never stepped.
+  std::optional<Replay> replay() const;
+
  private:
   Rules rules_;
   State state_;
+  std::vector<Input> inputs_;  // setup.players per frame stepped, the latest stepping of each frame
 };
 
 // (The server's factory, below, is in netplay_options.cpp: the client side of the game does not link JSON.)

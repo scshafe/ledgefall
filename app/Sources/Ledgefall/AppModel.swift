@@ -25,6 +25,9 @@ final class AppModel: ObservableObject {
     private var sessionStarted: Double?
     private var onlineTask: Task<Void, Never>?
     private var watch: ReplayWatch?
+    /// Whether this online match's replay has been kept (or given up on).
+    private var onlineReplayKept = false
+    private var lastReplayTry = 0.0
     private let library = ReplayLibrary.standard
     /// The online match last played, for a rematch: its setup, and whether this Mac hosted the room.
     private var lastOnline: (setup: OnlineSetup, hosted: Bool)?
@@ -248,6 +251,7 @@ final class AppModel: ObservableObject {
                     self.onlineSeating = Seating()
                     self.onlineSeating.limit(to: count)
                     self.sessions = opened
+                    self.onlineReplayKept = false
                     self.sessionStarted = Date().timeIntervalSince1970
                     self.flow.setStatus("Connecting to the game server...")
                 }
@@ -332,7 +336,13 @@ final class AppModel: ObservableObject {
                 saveReplay(of: match)
             }
         case .results where flow.online:
-            for session in sessions { _ = session.update() }  // keep answering the server until we leave
+            var ended = false
+            for session in sessions { ended = session.update() == .ended || ended }  // keep answering the server until we leave
+            // The replay is certain once the session has confirmed every tick: keep it then, or give up when the match is closed.
+            if !onlineReplayKept, let first = sessions.first, ended || now - lastReplayTry > 0.5 {
+                lastReplayTry = now  // (checking a replay re-plays it, so not every frame)
+                if saveReplay(of: first.match) || ended { onlineReplayKept = true }
+            }
         case .paused, .results:
             loop.idle(to: now)  // no ticks run, but the clock stays current so resuming does not lurch
         }
@@ -340,12 +350,15 @@ final class AppModel: ObservableObject {
     }
 
     /// Keep the match just played in the replay library. Best effort.
-    private func saveReplay(of match: Match) {
-        guard let data = match.replayData(), let library else { return }
+    @discardableResult
+    private func saveReplay(of match: Match) -> Bool {
+        guard let data = match.replayData(), let library else { return false }
         do {
             try library.save(data)
+            return true
         } catch {
             NSLog("ledgefall: could not save the replay: \(error)")
+            return false
         }
     }
 

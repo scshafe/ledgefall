@@ -49,7 +49,7 @@ lf_match* lf_match_create_setup(const lf_setup* in) {
   }
   auto rules = ledgefall::make_rules(setup);
   if (!rules) return nullptr;
-  lf_match* m = new (std::nothrow) lf_match{*rules, ledgefall::Recorder(rules->setup), {}, {}, {}, {}};
+  lf_match* m = new (std::nothrow) lf_match{*rules, ledgefall::Recorder(rules->setup), {}, {}, {}, {}, nullptr, nullptr, {}};
   if (m == nullptr) return nullptr;
   m->state = ledgefall::make_state(m->R());
   m->bots.assign(static_cast<std::size_t>(in->players), {});
@@ -233,11 +233,15 @@ void lf_match_weather(const lf_match* m, lf_weather* out) {
   out->belts_sign = h.belts_sign;
 }
 
-size_t lf_match_replay_size(const lf_match* m) { return m ? ledgefall::encode(m->recorder.finish(m->S())).size() : 0; }
+size_t lf_match_replay_size(const lf_match* m) {
+  const auto r = m ? m->replay() : std::nullopt;
+  return r ? ledgefall::encode(*r).size() : 0;
+}
 
 size_t lf_match_replay_write(const lf_match* m, uint8_t* buf, size_t cap) {
-  if (m == nullptr || buf == nullptr) return 0;
-  const std::vector<std::uint8_t> bytes = ledgefall::encode(m->recorder.finish(m->S()));
+  const auto r = m ? m->replay() : std::nullopt;
+  if (!r || buf == nullptr) return 0;
+  const std::vector<std::uint8_t> bytes = ledgefall::encode(*r);
   if (bytes.size() > cap) return 0;
   std::copy(bytes.begin(), bytes.end(), buf);
   return bytes.size();
