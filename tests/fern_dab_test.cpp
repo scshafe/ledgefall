@@ -146,6 +146,88 @@ void test_rub_out_erases_the_span_but_not_her_own_tile() {
   CHECK(s.players[0].stats.tiles_broken >= 3);
 }
 
+int leaves(const State& s) {
+  int n = 0;
+  for (std::size_t i = 0; i < s.world.placeables.size(); ++i) n += s.world.placeables[i].active != 0 && s.meta[i].tag == kTagLeaf ? 1 : 0;
+  return n;
+}
+
+void test_vine_grows_a_zigzag_of_leaves() {
+  const Rules r = rules(Character::Fern);
+  State s = on_ground(r, -60);
+  for (PlayerState& p : s.players) p.invuln = 0;
+  tick(r, s, {0, kButtonPlace});
+  CHECK(leaves(s) == 0);
+  for (int t = 0; t < 25; ++t) tick(r, s);
+  CHECK(leaves(s) == 0);  // the seed takes half a second
+  for (int t = 0; t < 10; ++t) tick(r, s);
+  CHECK(leaves(s) == 1);
+  for (int t = 0; t < 60; ++t) tick(r, s);
+  CHECK(leaves(s) == 4);
+
+  // Four leaves, alternating sides of the seed, each higher than the last.
+  std::vector<std::pair<Fixed, Fixed>> at;  // (centre x, top) in the order they were placed
+  for (std::size_t i = 0; i < s.world.placeables.size(); ++i) {
+    if (s.world.placeables[i].active == 0 || s.meta[i].tag != kTagLeaf) continue;
+    const fp::Rect& rc = s.world.placeables[i].rect;
+    at.push_back({(rc.left + rc.right) / Fixed::from_int(2), rc.top});
+    CHECK(rc.right - rc.left > Fixed::from_int(17) && rc.right - rc.left < Fixed::from_int(19));  // 56 px
+    CHECK(s.meta[i].owner == 0);
+  }
+  CHECK(at.size() == 4);
+  for (std::size_t i = 1; i < at.size(); ++i) {
+    CHECK(at[i].second > at[i - 1].second);                       // up
+    CHECK(fp::abs(at[i].first - at[i - 1].first) > Fixed::from_int(20));  // and across
+  }
+  // Anyone can climb it: a player dropped onto the lowest leaf stands on it.
+  State climb = s;
+  const int slot = [&] {
+    int best = -1;
+    for (std::size_t i = 0; i < climb.world.placeables.size(); ++i) {
+      if (climb.world.placeables[i].active != 0 && climb.meta[i].tag == kTagLeaf &&
+          (best < 0 || climb.world.placeables[i].rect.top < climb.world.placeables[static_cast<std::size_t>(best)].rect.top)) {
+        best = static_cast<int>(i);
+      }
+    }
+    return best;
+  }();
+  const fp::Rect leaf = climb.world.placeables[static_cast<std::size_t>(slot)].rect;
+  climb.world.entities[1].pos = {(leaf.left + leaf.right) / Fixed::from_int(2), leaf.top + Fixed::from_int(8)};
+  climb.world.entities[1].mode = fp::Mode::Airborne;
+  climb.world.entities[1].support = -1;
+  climb.world.entities[1].vel = {};
+  for (int t = 0; t < 20; ++t) tick(r, climb);
+  CHECK(climb.world.entities[1].support == static_cast<int>(r.engine.stage.platforms.size()) + slot);
+
+  // The leaves wither (the first after about 7 s) and the seed is gone.
+  for (int t = 0; t < 500; ++t) tick(r, s);
+  CHECK(leaves(s) == 0);
+}
+
+void test_vine_needs_ground_for_its_seed() {
+  const Rules r = rules(Character::Fern);
+  // At the right end of the floor, the seed 50 px ahead would be over the pit.
+  State s = on_ground(r, 90);
+  s.world.entities[0].facing = 1;
+  tick(r, s, {0, kButtonPlace});
+  CHECK(s.players[0].cooldown[0] == 0);  // a fizzle spends nothing
+  for (const Object& o : s.objects) CHECK(o.kind != ObjectKind::Vine);
+}
+
+void test_a_vine_dies_with_its_ground() {
+  const Rules r = rules(Character::Fern);
+  State s = on_ground(r, -60);
+  tick(r, s, {0, kButtonPlace});
+  const Object* seed = nullptr;
+  for (const Object& o : s.objects) seed = o.kind == ObjectKind::Vine ? &o : seed;
+  CHECK(seed != nullptr);
+  const int tile = tile_at(seed->pos.x);
+  fp::Events scratch;
+  fp::destroy_platform(r.engine, s.world, tile, scratch);
+  for (int t = 0; t < 60; ++t) tick(r, s);
+  CHECK(leaves(s) == 0);
+}
+
 void test_dab_and_fern_round_trip() {
   const Rules r = rules(Character::Fern);
   State s = on_ground(r);
@@ -170,6 +252,9 @@ int main() {
   test_roots_shake_then_break();
   test_roots_hurt_slabs();
   test_rub_out_erases_the_span_but_not_her_own_tile();
+  test_vine_grows_a_zigzag_of_leaves();
+  test_vine_needs_ground_for_its_seed();
+  test_a_vine_dies_with_its_ground();
   test_dab_and_fern_round_trip();
   return test::finish();
 }

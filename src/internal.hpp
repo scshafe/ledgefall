@@ -56,6 +56,7 @@ bool cast_anvil(State& state, const Rules& rules, int seat, const Input& in, boo
 // Mason's ledge, Dab's decoy and hollow (one-way placeables), and the respawn halo.
 bool cast_ledge(State& state, const Rules& rules, int seat, fp::Events& events);
 bool cast_decoy(State& state, const Rules& rules, int seat, const Input& in, fp::Events& events);
+bool cast_vine(State& state, const Rules& rules, int seat);
 bool cast_hollow(State& state, const Rules& rules, int seat);
 void arm_hollow(const Rules& rules, State& state, const Pending& p, fp::Events& scratch);
 // A personal platform for a player who has just come into play at `at` (the player's feet are put on it).

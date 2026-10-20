@@ -54,6 +54,11 @@ const Fixed kMagnetStrength = fx100(16), kMagnetBase = fx100(4), kMagnetMaxSpeed
 const Fixed kMagnetAhead = fx100(2240), kMagnetLift = fx100(770);
 constexpr int kMagnetLife = 300, kMagnetArm = 10, kMagnetFlip = 150;
 
+// Fern's vine: a seed that grows a zigzag of four one-way leaves, one every 0.2 s.
+constexpr int kVineDelay = 30, kVineGrow = 12, kVineLeaves = 4, kVineLife = 420, kVineMax = 2;
+const Fixed kVineAhead = fx100(1600), kVineOff = fx100(1216), kVineRise = fx100(1664);
+const Fixed kLeafHalfWidth = fx100(896), kLeafThickness = fx100(400);
+
 constexpr int kDrillHopTicks = 10;
 const Fixed kDrillHop = fx100(180);     // 8 px/tick up
 const Fixed kDrillDive = fx100(350);    // 16 px/tick down
@@ -372,6 +377,32 @@ void update_bumper(const Rules& rules, State& state, Object& b) {
     const fp::Rect body{e.pos.x - m.body_half_width, e.pos.x + m.body_half_width, e.pos.y, e.pos.y + m.body_height};
     if (circle_box(b.pos.x, b.pos.y, kBumperRadius, body)) bounce_off(rules, state, b, static_cast<int>(i));
   }
+}
+
+// The seed grows a leaf every 0.2 s while its ground holds; the leaves zigzag up from the seed, each a short jump above the last.
+void update_vine(const Rules& rules, State& state, Object& o, fp::Events& scratch) {
+  const int tile = o.hit[0] - 1;
+  if (tile < 0 || !in_play(state.world.platforms[static_cast<std::size_t>(tile)].phase)) {  // the seed lost its ground
+    o = {};
+    return;
+  }
+  if (--o.timer > 0) return;
+  const int i = o.breaks++;
+  const int side = (i % 2 == 0 ? 1 : -1) * static_cast<int>(o.vel.x.raw() > 0 ? 1 : -1);
+  const Fixed cx = o.pos.x + kVineOff * Fixed::from_int(side);
+  const Fixed top = o.pos.y + kVineRise * Fixed::from_int(i + 1);
+  fp::Placeable leaf;
+  leaf.kind = fp::PlaceableKind::OneWay;
+  leaf.rect = {cx - kLeafHalfWidth, cx + kLeafHalfWidth, top - kLeafThickness, top};
+  leaf.life = kVineLife - i * kVineGrow;
+  const int slot = fp::place(state.world, leaf);
+  if (slot >= 0) {
+    state.meta[static_cast<std::size_t>(slot)] = {o.owner, 1, -1, static_cast<std::int32_t>(state.world.frame), kTagLeaf};
+  }
+  o.timer = kVineGrow;
+  if (o.breaks >= kVineLeaves) o = {};
+  (void)scratch;
+  (void)rules;
 }
 
 // Roots: the tiles around the seed shake while it swells, then are doomed; slabs in reach take 1.
@@ -723,6 +754,8 @@ void update_objects(const Rules& rules, State& state, fp::Events& scratch) {
       if (o.pos.y < blast.bottom || o.pos.x < blast.left || o.pos.x > blast.right) o = {};
     } else if (o.kind == ObjectKind::Anvil) {
       update_anvil(rules, state, o, scratch);
+    } else if (o.kind == ObjectKind::Vine) {
+      update_vine(rules, state, o, scratch);
     } else if (o.kind == ObjectKind::Magnet) {
       if (o.arm > 0) --o.arm;
       if (o.uses == 1 && --o.rest <= 0) o.uses = 0;  // the flip wears off
@@ -897,6 +930,8 @@ fp::Rect object_rect(const Object& o) {
       return {o.pos.x - kSawRadius, o.pos.x + kSawRadius, o.pos.y - kSawRadius, o.pos.y + kSawRadius};
     case ObjectKind::Magnet:
       return {o.pos.x - kMagnetRadius, o.pos.x + kMagnetRadius, o.pos.y - kMagnetRadius, o.pos.y + kMagnetRadius};
+    case ObjectKind::Vine:
+      return {o.pos.x - fx100(300), o.pos.x + fx100(300), o.pos.y, o.pos.y + fx100(600)};
     case ObjectKind::Roots:
       return {o.pos.x - fx100(300), o.pos.x + fx100(300), o.pos.y, o.pos.y + fx100(500)};
     case ObjectKind::Rub:
@@ -1114,6 +1149,44 @@ bool cast_polarity(State& state, const Rules& rules, int seat) {
     }
     o.owner = m->owner;
   }
+  return true;
+}
+
+}  // namespace ledgefall::detail
+
+namespace ledgefall::detail {
+
+// Vine: a seed 50 px ahead that needs ground; after 0.5 s it grows four one-way leaves in a zigzag.
+bool cast_vine(State& state, const Rules& rules, int seat) {
+  const fp::EntityState& e = state.world.entities[static_cast<std::size_t>(seat)];
+  const int under = tile_under_feet(rules, e);
+  if (under < 0) return false;
+  const Fixed top = rules.engine.stage.platforms[static_cast<std::size_t>(under)].rect.top;
+  const Fixed x = e.pos.x + kVineAhead * Fixed::from_int(e.facing);
+  int seed_tile = -1;  // a seed needs ground
+  const auto& platforms = rules.engine.stage.platforms;
+  for (std::size_t t = 0; t < platforms.size(); ++t) {
+    if (in_play(state.world.platforms[t].phase) && platforms[t].rect.top == top && x >= platforms[t].rect.left && x <= platforms[t].rect.right) {
+      seed_tile = static_cast<int>(t);
+    }
+  }
+  if (seed_tile < 0) return false;
+  for (;;) {  // two at once: the oldest seed goes (its leaves stay until they wither)
+    int count = 0;
+    Object* oldest = nullptr;
+    for (Object& o : state.objects) {
+      if (o.kind != ObjectKind::Vine || o.owner != seat) continue;
+      ++count;
+      if (oldest == nullptr || o.breaks > oldest->breaks) oldest = &o;
+    }
+    if (count < kVineMax) break;
+    *oldest = {};
+  }
+  Object* slot = free_slot(state);
+  if (slot == nullptr) return false;
+  *slot = Object{ObjectKind::Vine, static_cast<std::int8_t>(seat), Payload::Glue, {x, top}, {Fixed::from_int(e.facing), Fixed::zero()}, {}, {},
+                 static_cast<std::int16_t>(kVineDelay)};
+  slot->hit[0] = static_cast<std::int16_t>(seed_tile + 1);
   return true;
 }
 

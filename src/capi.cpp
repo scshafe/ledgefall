@@ -203,7 +203,7 @@ int lf_match_thing(const lf_match* m, int index, lf_thing* out) {
                 : o.kind == ObjectKind::Charge ? LF_THING_CHARGE
                 : o.kind == ObjectKind::Saw ? LF_THING_SAW
                 : o.kind == ObjectKind::Roots ? LF_THING_ROOTS
-                : o.kind == ObjectKind::Rub ? LF_THING_RUB : LF_THING_MAGNET;
+                : o.kind == ObjectKind::Rub ? LF_THING_RUB : o.kind == ObjectKind::Vine ? LF_THING_VINE : LF_THING_MAGNET;
     out->left = r.left.raw();
     out->right = r.right.raw();
     out->bottom = r.bottom.raw();
