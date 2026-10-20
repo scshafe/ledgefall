@@ -67,6 +67,13 @@ void register_placed(State& state, int slot, int seat, std::uint8_t uses, std::i
 bool throw_lob(State& state, const Rules& rules, int seat, Payload payload, const Input& in);
 void update_objects(const Rules& rules, State& state, fp::Events& scratch);
 
+// Where a lob thrown by `seat`, facing `facing` with `in`, starts and how fast it goes.
+void lob_launch(const Rules& rules, const State& state, int seat, int facing, const Input& in, fp::Vec2& pos, fp::Vec2& vel);
+
+// Where a lob from `pos` at `vel` lands: the x, and the top of the surface (the tile or wall it lands on).
+// False if it falls out of the world. Ignores gusts, lodestones and walls' sides.
+bool predict_lob(const Rules& rules, const State& state, fp::Vec2 pos, fp::Vec2 vel, fp::Fixed& land_x, fp::Fixed& land_top);
+
 bool cast_gust(const Rules& rules, State& state, int seat);
 bool cast_drill(State& state, int seat);
 

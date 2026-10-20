@@ -1,5 +1,6 @@
 // Bots: a match of bots ends with a winner, is reproducible, and bots outlast
 // someone standing still.
+#include <cstdio>
 #include <vector>
 
 #include "check.hpp"
@@ -49,6 +50,27 @@ void test_bot_matches_end_with_a_winner() {
   }
 }
 
+// A bot with each character, against someone who stands still, uses its kit.
+void test_every_kit_is_used() {
+  for (int c = 0; c < kCharacterCount; ++c) {
+    Setup su;
+    su.players = 2;
+    su.stocks = 5;
+    su.characters = {static_cast<Character>(c), Character::Mason};
+    const auto rules = make_rules(su);
+    State s = make_state(*rules);
+    Bot bot;
+    bot.level = BotLevel::Hard;
+    std::vector<Input> in(2);
+    for (int t = 0; t < 4 * 3600 && !s.over; ++t) {
+      in[0] = bot_input(*rules, s, 0, bot);
+      step(*rules, s, in);
+    }
+    CHECK(s.players[0].stats.placed > 0);
+    if (s.players[0].stats.placed == 0) std::fprintf(stderr, "character %d never cast\n", c);
+  }
+}
+
 void test_bot_matches_are_reproducible() {
   const Run a = play(4, 0, BotLevel::Normal, 3, 6 * 60 * 60);
   const Run b = play(4, 0, BotLevel::Normal, 3, 6 * 60 * 60);
@@ -60,6 +82,7 @@ void test_bot_matches_are_reproducible() {
 int main() {
   test_bots_beat_standing_still();
   test_bot_matches_end_with_a_winner();
+  test_every_kit_is_used();
   test_bot_matches_are_reproducible();
   return test::finish();
 }
