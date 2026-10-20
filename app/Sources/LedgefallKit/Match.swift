@@ -70,9 +70,9 @@ public enum Fighter: Int, CaseIterable {
 
 /// The stages, in the core's order.
 public enum Arena: Int, CaseIterable {
-    case practice, yard, quarry, tide, gale
+    case practice, yard, quarry, tide, gale, swell
 
-    public var name: String { ["Practice", "Crumble Yard", "The Quarry", "Tide Pools", "Gale Bridge"][rawValue] }
+    public var name: String { ["Practice", "Crumble Yard", "The Quarry", "Tide Pools", "Gale Bridge", "Sinking Ship"][rawValue] }
 }
 
 public struct PlayerView {
