@@ -107,6 +107,12 @@ difference will be absorbed.
   side has anyone left and the whole side wins and places first; eliminations a
   teammate caused earn no credit; bots never target a teammate. Two sides are
   needed (A and B, or a team and a solo player), else everyone plays alone.
+- Replays (`include/ledgefall/replay.hpp`): a match is its setup and every
+  seat's input every tick (bots' too), written down by a `Recorder`, stored
+  compactly (a tick stores only the seats whose input changed) and ending with
+  the state's hash, which `verify` checks by running it again. `decode_replay`
+  refuses anything that is not a well-formed replay of a valid setup. The C face
+  records every match and plays one back (`lf_replay_*`).
 - Known gaps against lost-footing: the respawn halo and post-respawn immunity
   wait for hazards; the engine splits a straddler's load equally between the
   tiles (lost-footing: 75% each).

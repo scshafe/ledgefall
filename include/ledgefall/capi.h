@@ -9,6 +9,7 @@
 #ifndef LEDGEFALL_CAPI_H
 #define LEDGEFALL_CAPI_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -148,6 +149,26 @@ typedef struct lf_weather {
 } lf_weather;
 
 void lf_match_weather(const lf_match* m, lf_weather* out);
+
+/* The match so far as a replay: its setup and every seat's input on every tick (bots' included),
+ * ending with the state's hash. `lf_match_replay_write` returns the bytes written (0 if `cap` is too small;
+ * `lf_match_replay_size` says how many are needed). */
+size_t lf_match_replay_size(const lf_match* m);
+size_t lf_match_replay_write(const lf_match* m, uint8_t* buf, size_t cap);
+
+/* Watching one: open it, make a match from its setup, step that with the replay's inputs tick by tick
+ * (the match has no bots; give it the inputs as if they were people's). */
+typedef struct lf_replay lf_replay;
+
+lf_replay* lf_replay_open(const uint8_t* bytes, size_t len); /* NULL if not a well-formed replay of a valid setup */
+void lf_replay_close(lf_replay* r);
+void lf_replay_setup(const lf_replay* r, lf_setup* out);
+uint32_t lf_replay_ticks(const lf_replay* r);
+/* The inputs of every seat on `tick` (players of them) into `out`; 0 for a tick past the end. */
+int lf_replay_inputs(const lf_replay* r, uint32_t tick, lf_input* out);
+uint64_t lf_replay_final_hash(const lf_replay* r);
+/* Runs it from the start and says whether it ends with the recorded hash. */
+int lf_replay_verify(const lf_replay* r);
 
 /* The blast zone: left, right, bottom, top. */
 void lf_match_blast(const lf_match* m, int32_t out[4]);

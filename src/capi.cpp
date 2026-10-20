@@ -1,14 +1,21 @@
 #include "ledgefall/capi.h"
 
+#include <algorithm>
 #include <new>
 #include <vector>
 
 #include "ledgefall/bot.hpp"
 #include "internal.hpp"
 #include "ledgefall/match.hpp"
+#include "ledgefall/replay.hpp"
+
+struct lf_replay {
+  ledgefall::Replay replay;
+};
 
 struct lf_match {
   ledgefall::Rules rules;
+  ledgefall::Recorder recorder;
   ledgefall::State state;
   std::vector<ledgefall::Bot> bots;
   std::vector<int> is_bot;
@@ -55,9 +62,8 @@ lf_match* lf_match_create_setup(const lf_setup* in) {
   }
   auto rules = ledgefall::make_rules(setup);
   if (!rules) return nullptr;
-  lf_match* m = new (std::nothrow) lf_match;
+  lf_match* m = new (std::nothrow) lf_match{*rules, ledgefall::Recorder(rules->setup), {}, {}, {}, {}};
   if (m == nullptr) return nullptr;
-  m->rules = *rules;
   m->state = ledgefall::make_state(m->rules);
   m->bots.assign(static_cast<std::size_t>(in->players), {});
   m->is_bot.assign(static_cast<std::size_t>(in->players), 0);
@@ -91,6 +97,7 @@ void lf_match_step(lf_match* m, const lf_input* inputs) {
       m->inputs[i] = {};
     }
   }
+  if (!m->state.over) m->recorder.record(m->inputs);
   ledgefall::step(m->rules, m->state, m->inputs);
 }
 
@@ -230,6 +237,53 @@ void lf_match_weather(const lf_match* m, lf_weather* out) {
   out->gale_phase = static_cast<int32_t>(h.gale);
   out->gale_dir = h.gale_dir;
 }
+
+size_t lf_match_replay_size(const lf_match* m) { return m ? ledgefall::encode(m->recorder.finish(m->state)).size() : 0; }
+
+size_t lf_match_replay_write(const lf_match* m, uint8_t* buf, size_t cap) {
+  if (m == nullptr || buf == nullptr) return 0;
+  const std::vector<std::uint8_t> bytes = ledgefall::encode(m->recorder.finish(m->state));
+  if (bytes.size() > cap) return 0;
+  std::copy(bytes.begin(), bytes.end(), buf);
+  return bytes.size();
+}
+
+lf_replay* lf_replay_open(const uint8_t* bytes, size_t len) {
+  if (bytes == nullptr) return nullptr;
+  auto decoded = ledgefall::decode_replay(std::span<const std::uint8_t>(bytes, len));
+  if (!decoded) return nullptr;
+  return new (std::nothrow) lf_replay{std::move(*decoded)};
+}
+
+void lf_replay_close(lf_replay* r) { delete r; }
+
+void lf_replay_setup(const lf_replay* r, lf_setup* out) {
+  if (r == nullptr || out == nullptr) return;
+  const Setup& s = r->replay.setup;
+  *out = {};
+  out->players = s.players;
+  out->stocks = s.stocks;
+  out->seed = s.seed;
+  out->stage = static_cast<int32_t>(s.stage);
+  for (std::size_t i = 0; i < 4; ++i) {
+    out->characters[i] = static_cast<uint8_t>(s.characters[i]);
+    out->teams[i] = s.teams[i];
+    out->seat_stocks[i] = s.seat_stocks[i];
+  }
+}
+
+uint32_t lf_replay_ticks(const lf_replay* r) { return r ? r->replay.ticks : 0; }
+
+int lf_replay_inputs(const lf_replay* r, uint32_t tick, lf_input* out) {
+  if (r == nullptr || out == nullptr || tick >= r->replay.ticks) return 0;
+  const Input* in = r->replay.tick_inputs(tick);
+  for (int i = 0; i < r->replay.setup.players; ++i) out[i] = {in[i].move_x, in[i].buttons};
+  return 1;
+}
+
+uint64_t lf_replay_final_hash(const lf_replay* r) { return r ? r->replay.final_hash : 0; }
+
+int lf_replay_verify(const lf_replay* r) { return r && ledgefall::verify(r->replay) ? 1 : 0; }
 
 void lf_match_blast(const lf_match* m, int32_t out[4]) {
   if (m == nullptr || out == nullptr) return;
