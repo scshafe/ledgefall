@@ -115,8 +115,8 @@ final class SceneTests: XCTestCase {
     func testQuadsCoverPlatformsBodiesAndStocks() throws {
         let match = try XCTUnwrap(Match(players: 2, stocks: 3))
         let quads = Scene.quads(for: match)
-        // Every platform is solid at the start, plus 2 bodies and 2 x 3 stock pips.
-        XCTAssertEqual(quads.count, match.platformCount + 2 + 6)
+        // Every platform is solid at the start, plus a halo and a body for each of 2 players and 2 x 3 stock pips.
+        XCTAssertEqual(quads.count, match.platformCount + 2 + 2 + 6)
     }
 
     func testCameraFitsTheBlastZone() {
