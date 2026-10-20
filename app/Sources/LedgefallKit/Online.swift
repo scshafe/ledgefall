@@ -205,7 +205,7 @@ public final class OnlineSession {
         var s = setup.lfSetup
         guard let h = lf_net_open(&s, server, room, token), let view = lf_net_view(h) else { return nil }
         handle = h
-        match = Match(view: OpaquePointer(view))
+        match = Match(view: view)
     }
 
     deinit { lf_net_close(handle) }
