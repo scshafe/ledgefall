@@ -129,8 +129,10 @@ difference will be absorbed.
   the state's hash, which `verify` checks by running it again. `decode_replay`
   refuses anything that is not a well-formed replay of a valid setup. The C face
   records every match and plays one back (`lf_replay_*`).
-- Known gaps against lost-footing: the engine splits a straddler's load equally
-  between the tiles (lost-footing: 75% each).
+- A player on the seam between two tiles loads each with 75% of the usual rate
+  (lost-footing), through the engine's `straddle_share` on every platform's stress
+  (the supporting platform's setting counts; three or more platforms each get the
+  fraction). `tests/straddle_test.cpp`.
 
 How determinism is kept honest (all in `./scripts/verify`, so CI runs it on
 Linux and macOS): the golden hash trace of a scripted 4-player match

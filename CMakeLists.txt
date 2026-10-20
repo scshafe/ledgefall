@@ -12,7 +12,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 include(FetchContent)
 FetchContent_Declare(fighter_physics
   GIT_REPOSITORY https://github.com/scshafe/fighter-physics.git
-  GIT_TAG 5e0e2cf6a7f4bfd97891168ea1c59b9b31fc21b3)
+  GIT_TAG eaff550c6c3c23f7d79c2173d8c4e6ca41c6b76e)
 # The engine's own tests and benchmark are its CI's job, not ours.
 set(_ledgefall_build_testing ${BUILD_TESTING})
 set(BUILD_TESTING OFF)
@@ -97,7 +97,7 @@ if(BUILD_TESTING)
   target_link_libraries(ledgefall_core_match_test PRIVATE ledgefall::ledgefall_core)
   add_test(NAME ledgefall_core_match COMMAND ledgefall_core_match_test)
 
-  foreach(name scenario determinism_trace bot capi kit glim pip slab fuse fern_dab ferro hazard team replay oneway belts)
+  foreach(name scenario determinism_trace bot capi kit glim pip slab fuse fern_dab ferro hazard team replay oneway belts straddle)
     add_executable(ledgefall_core_${name}_test tests/${name}_test.cpp)
     target_link_libraries(ledgefall_core_${name}_test PRIVATE ledgefall::ledgefall_core)
     target_compile_definitions(ledgefall_core_${name}_test PRIVATE
