@@ -151,6 +151,31 @@ Not built yet: rebinding, dead-zone settings, per-seat device menus, sound,
 character art, interpolation between ticks. Bots are the footing bot only (see
 `include/ledgefall/bot.hpp`).
 
+## Online play (milestone 3)
+
+`include/ledgefall/netplay.hpp`, `src/netplay.cpp`, `server/main.cpp`. netplay-kit
+is pinned by commit like the engine (`docs/decisions/0002-netplay-kit-pin.md`)
+and only the `ledgefall_netplay` target and the server link it; the core and
+the app do not.
+
+- `NetplaySimulation` is the core as netplay-kit's `Simulation`: it owns one
+  match's `Rules` and `State`; `step`, `snapshot`, `restore` and `hash` are the
+  core's; the input is the core's two bytes (`valid_input` is `decode`); the
+  match is `finished` when the core says it is over, and `result_json` reports
+  winner, winning team, ticks, places, eliminations, falls and stocks. A late
+  input is predicted as the same movement without a press (a move button is an
+  event, not a hold).
+- `make_netplay_simulation(players, options)` is the server's factory. The
+  lobby passes a room's options on: `stocks`, `seed`, `stage`, `characters`,
+  `teams`, `seat_stocks`, all optional and all checked; anything wrong makes the
+  room refuse.
+- `ledgefall_server` is `npk::gameserver::run` with that factory.
+- A snapshot is under 16 KiB; netplay-kit's reliable message holds 64 KiB.
+- The simulated-network test (a server and two or four clients on a lossy
+  link) converges to the state a straight replay of the canonical inputs gives.
+  It needs an engine that can restore a world with a doomed tile
+  (fighter-physics#23); until the pin has the fix the test says it is skipped.
+
 ## Input
 
 The app's input module reads GameController.framework (Xbox and other MFi or
