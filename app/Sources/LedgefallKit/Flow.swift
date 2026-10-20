@@ -58,8 +58,8 @@ public struct Flow: Equatable {
     public static let playersRange = 2...4
     public static let stocksRange = 1...5
 
-    // Setup rows: mode, players, stocks, stage, teams, one per seat (the character), start.
-    public static let modeRow = 0, playersRow = 1, stocksRow = 2, stageRow = 3, teamsRow = 4, firstSeatRow = 5
+    // Setup rows: mode, people on this Mac (online), players, stocks, stage, teams, one per seat (the character), start.
+    public static let modeRow = 0, localRow = 1, playersRow = 2, stocksRow = 3, stageRow = 4, teamsRow = 5, firstSeatRow = 6
 
     public private(set) var phase: Phase = .setup
     public private(set) var mode: PlayMode = .local
@@ -75,11 +75,13 @@ public struct Flow: Equatable {
     public private(set) var replayIndex = 0
     public private(set) var watchPaused = false
     public private(set) var players = 2
+    /// Online: how many people play from this Mac, each in a seat of their own (1...4, never more than the room's seats).
+    public private(set) var localPlayers = 1
     public private(set) var stocks = 3
     public private(set) var arena: Arena = .yard
     public private(set) var teamMode: TeamMode = .off
     public private(set) var fighters: [Fighter] = [.mason, .glim, .pip, .fuse]
-    public private(set) var selectedRow = 7
+    public private(set) var selectedRow = 8
 
     public init() {}
 
@@ -260,8 +262,10 @@ public struct Flow: Equatable {
         func wrap(_ i: Int, _ n: Int) -> Int { ((i % n) + n) % n }
         switch selectedRow {
         case Flow.modeRow: mode = PlayMode(rawValue: wrap(mode.rawValue + delta, PlayMode.allCases.count)) ?? mode
+        case Flow.localRow: localPlayers = min(max(localPlayers + delta, 1), min(players, 4))
         case Flow.playersRow:
             players = min(max(players + delta, Flow.playersRange.lowerBound), Flow.playersRange.upperBound)
+            localPlayers = min(localPlayers, players)
         case Flow.stocksRow: stocks = min(max(stocks + delta, Flow.stocksRange.lowerBound), Flow.stocksRange.upperBound)
         case Flow.stageRow: arena = Arena(rawValue: wrap(arena.rawValue + delta, Arena.allCases.count)) ?? arena
         case Flow.teamsRow: teamMode = TeamMode(rawValue: wrap(teamMode.rawValue + delta, TeamMode.allCases.count)) ?? teamMode

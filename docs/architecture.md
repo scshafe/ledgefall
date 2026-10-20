@@ -164,8 +164,10 @@ room's name (`OnlineSetup`: until the lobby shows a room's options to its player
 how a joiner learns the stage and characters) and as the options the server reads, takes a seat,
 readies, and waits; joining lists the open ledgefall rooms. When the lobby hands the room to a game
 server the app opens an `OnlineSession` (`lf_net_*`: netplay-kit's client session running the core)
-and draws its read-only match view with the same renderer. One person plays online per Mac; the
-pause key leaves. At the results, Return plays again: whoever hosted opens a new room with the
+and draws its read-only match view with the same renderer. Several people can play online from one Mac (the
+setup's *On this Mac* row): each takes a seat of her own and has a session of her own with the game
+server, and the keyboard clusters and controllers are given out in the order they are first used, as in
+a local match. The pause key leaves. At the results, Return plays again: whoever hosted opens a new room with the
 same setup (a new seed) and the others wait for it to appear in the list, then sit down. The lobby's address is `LEDGEFALL_LOBBY` or `defaults write ledgefall lobby <url>`.
 
 Replays: every finished match is saved (`ReplayLibrary`, `~/Library/Application Support/Ledgefall/Replays/`);

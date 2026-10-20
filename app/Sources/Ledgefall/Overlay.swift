@@ -34,7 +34,7 @@ struct OverlayView: View {
                 ForEach(0..<model.stocks.count, id: \.self) { seat in
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(spacing: 6) {
-                            Text("P\(seat + 1)\(model.localSeat == seat ? " (you)" : model.humans[seat] ? "" : " (bot)")").bold()
+                            Text("P\(seat + 1)\(model.localSeats.contains(seat) ? (model.localSeats.count > 1 ? " (here)" : " (you)") : model.humans[seat] ? "" : " (bot)")").bold()
                             Text(model.stocks[seat] > 0 ? String(repeating: "●", count: model.stocks[seat]) : "out")
                         }
                         if seat < model.kits.count {
@@ -67,6 +67,7 @@ struct OverlayView: View {
         return VStack(alignment: .leading, spacing: 12) {
             Text("Ledgefall").font(.system(size: 40, weight: .bold))
             row("Mode", value: flow.mode.name, selected: flow.selectedRow == Flow.modeRow)
+            row("On this Mac", value: flow.mode == .host || flow.mode == .join ? "\(flow.localPlayers) online" : "(online modes)", selected: flow.selectedRow == Flow.localRow)
             row("Players", value: "\(flow.players)", selected: flow.selectedRow == Flow.playersRow)
             row("Stocks", value: "\(flow.stocks)", selected: flow.selectedRow == Flow.stocksRow)
             row("Stage", value: flow.arena.name, selected: flow.selectedRow == Flow.stageRow)

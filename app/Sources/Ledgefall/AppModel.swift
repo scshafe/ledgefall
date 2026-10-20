@@ -12,7 +12,7 @@ final class AppModel: ObservableObject {
     /// Per seat: the fighter, and the ticks until each move can be cast again.
     @Published private(set) var kits: [SeatKit] = []
     /// Online: this client's seat, once the match is on.
-    @Published private(set) var localSeat: Int?
+    @Published private(set) var localSeats: Set<Int> = []
     /// Watching a replay: ticks played and in all.
     @Published private(set) var watchTicks: (played: Int, total: Int)?
     /// The lobby's address, from the LEDGEFALL_LOBBY environment variable or `defaults write <app> lobby <url>`.
@@ -20,7 +20,8 @@ final class AppModel: ObservableObject {
 
     private(set) var loop: GameLoop
     /// The online match, once the game server has been found; its view is what is drawn while the match is on.
-    private var session: OnlineSession?
+    /// One session per person playing from this Mac, each in a seat of its own.
+    private var sessions: [OnlineSession] = []
     private var sessionStarted: Double?
     private var onlineTask: Task<Void, Never>?
     private var watch: ReplayWatch?
@@ -28,10 +29,9 @@ final class AppModel: ObservableObject {
     /// The online match last played, for a rematch: its setup, and whether this Mac hosted the room.
     private var lastOnline: (setup: OnlineSetup, hosted: Bool)?
     private var onlineSeating: Seating = {
-        var s = Seating()
-        s.limit(to: 1)  // one person plays online from this Mac
-        return s
+        Seating()  // limited to the people playing from this Mac when an online match is set up
     }()
+    private var localCount = 1
     private var seating = Seating()
     private let controllers = Controllers()
     private var previousPads: [Int: GamepadState] = [:]
@@ -44,7 +44,7 @@ final class AppModel: ObservableObject {
     }
 
     /// What is drawn: the online match while one is on, else the local one.
-    var displayMatch: Match { (flow.online ? session?.match : nil) ?? (flow.phase == .watching ? watch?.match : nil) ?? loop.match }
+    var displayMatch: Match { (flow.online ? sessions.first?.match : nil) ?? (flow.phase == .watching ? watch?.match : nil) ?? loop.match }
 
     private static func configuredLobby() -> String? {
         let text = ProcessInfo.processInfo.environment["LEDGEFALL_LOBBY"] ?? UserDefaults.standard.string(forKey: "lobby")
@@ -124,9 +124,9 @@ final class AppModel: ObservableObject {
     private func dropOnline() {
         onlineTask?.cancel()
         onlineTask = nil
-        session = nil
+        sessions = []
         sessionStarted = nil
-        localSeat = nil
+        localSeats = []
     }
 
     /// Run lobby work off the main thread; whatever it throws is shown on the connecting screen.
@@ -153,10 +153,11 @@ final class AppModel: ObservableObject {
 
     private func hostRoom(_ setup: OnlineSetup) {
         lastOnline = (setup, true)
+        let count = min(flow.localPlayers, setup.players)
         runOnline { [self] lobby in
             guard try await lobby.gameServers() > 0 else { throw LobbyError("No game server is registered with the lobby") }
             let room = try await lobby.createRoom(setup)
-            try await takeSeatAndWait(lobby, room: room, setup: setup)
+            try await takeSeatsAndWait(lobby, room: room, setup: setup, count: count)
         }
     }
 
@@ -173,7 +174,8 @@ final class AppModel: ObservableObject {
     private func joinRoom(_ id: String) {
         guard let setup = flow.rooms.first(where: { $0.id == id })?.setup else { return }
         lastOnline = (setup, false)
-        runOnline { [self] lobby in try await takeSeatAndWait(lobby, room: id, setup: setup) }
+        let count = flow.localPlayers
+        runOnline { [self] lobby in try await takeSeatsAndWait(lobby, room: id, setup: setup, count: count) }
     }
 
     /// The same match again: whoever hosted opens a new room with the same setup (and a new seed); the others
@@ -192,6 +194,7 @@ final class AppModel: ObservableObject {
             hostRoom(setup)
             return
         }
+        let count = min(localCount, previous.setup.players)
         runOnline { [self] lobby in
             for _ in 0..<60 {  // up to a minute
                 try Task.checkCancellation()
@@ -201,7 +204,7 @@ final class AppModel: ObservableObject {
                 }
                 if let match, let setup = match.setup {
                     await MainActor.run { self.lastOnline = (setup, false) }
-                    try await takeSeatAndWait(lobby, room: match.id, setup: setup)
+                    try await takeSeatsAndWait(lobby, room: match.id, setup: setup, count: count)
                     return
                 }
                 try await Task.sleep(nanoseconds: 1_000_000_000)
@@ -210,25 +213,46 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Sit down in a room, say we are ready, and wait for the lobby to hand the room to a game server.
-    private func takeSeatAndWait(_ lobby: LobbyClient, room: String, setup: OnlineSetup) async throws {
-        let secret = try await lobby.join(room, as: AppModel.playerName())
-        try await lobby.ready(room, secret: secret)
+    /// Sit down in a room (one seat for each person at this Mac), say we are ready, and wait for the lobby to hand
+    /// the room to a game server. Each seat is its own connection to the game server.
+    private func takeSeatsAndWait(_ lobby: LobbyClient, room: String, setup: OnlineSetup, count: Int) async throws {
+        let free = try await lobby.room(room)
+        guard free.seatCount - free.taken >= count else {
+            throw LobbyError(count == 1 ? "The room is full" : "The room has no \(count) free seats")
+        }
+        let base = AppModel.playerName()
+        var secrets: [String] = []
+        for k in 0..<count {
+            let secret = try await lobby.join(room, as: count == 1 ? base : "\(base) \(k + 1)")
+            try await lobby.ready(room, secret: secret)
+            secrets.append(secret)
+        }
+        await MainActor.run { self.localCount = count }
         while true {
             try Task.checkCancellation()
-            let me = try await lobby.me(room, secret: secret)
-            if me.state == "playing", let token = me.token, let udp = me.udp {
-                guard let opened = OnlineSession(setup: setup, server: udp, room: room, token: token) else {
-                    throw LobbyError("Could not reach the game server at \(udp)")
+            var tickets: [(token: String, udp: String)] = []
+            for secret in secrets {
+                let me = try await lobby.me(room, secret: secret)
+                if me.state == "finished" { throw LobbyError("The room is closed") }
+                if me.state == "playing", let token = me.token, let udp = me.udp { tickets.append((token, udp)) }
+            }
+            if tickets.count == secrets.count {
+                var opened: [OnlineSession] = []
+                for ticket in tickets {
+                    guard let s = OnlineSession(setup: setup, server: ticket.udp, room: room, token: ticket.token) else {
+                        throw LobbyError("Could not reach the game server at \(ticket.udp)")
+                    }
+                    opened.append(s)
                 }
                 await MainActor.run {
-                    self.session = opened
+                    self.onlineSeating = Seating()
+                    self.onlineSeating.limit(to: count)
+                    self.sessions = opened
                     self.sessionStarted = Date().timeIntervalSince1970
                     self.flow.setStatus("Connecting to the game server...")
                 }
                 return
             }
-            if me.state == "finished" { throw LobbyError("The room is closed") }
             let r = try await lobby.room(room)
             await say("Waiting for the other players (\(r.taken) of \(r.seatCount))...")
             try await Task.sleep(nanoseconds: 500_000_000)
@@ -262,29 +286,32 @@ final class AppModel: ObservableObject {
             }
         case .connecting:
             loop.advance(to: now) { [] }
-            if let session {
-                switch session.update() {
-                case .running:
-                    flow.onlineStarted()
-                    localSeat = session.seat
-                case .failed, .ended:
+            if !sessions.isEmpty {
+                let states = sessions.map { $0.update() }
+                if states.contains(where: { $0 == .failed || $0 == .ended }) {
                     flow.onlineFailed("The game server did not accept us")
-                    self.session = nil
-                case .connecting, .waiting:
-                    if let started = sessionStarted, Date().timeIntervalSince1970 - started > 30 {
-                        flow.onlineFailed("The game server did not answer")
-                        self.session = nil
-                    }
+                    sessions = []
+                } else if states.allSatisfy({ $0 == .running }) {
+                    flow.onlineStarted()
+                    localSeats = Set(sessions.compactMap(\.seat))
+                } else if let started = sessionStarted, Date().timeIntervalSince1970 - started > 30 {
+                    flow.onlineFailed("The game server did not answer")
+                    sessions = []
                 }
             }
         case .playing where flow.online:
-            if let session {
+            if let first = sessions.first {
+                // The first people to use a keyboard cluster or a controller get the seats, in order.
                 let update = onlineSeating.update(DeviceFrame(keys: heldKeys, pads: controllers.states()))
-                session.setInput(update.inputs.first ?? PlayerInput())
-                let state = session.update()
-                localSeat = session.seat
-                if session.match.isOver {
-                    flow.matchOver(winner: session.match.winner)
+                var state = OnlineSession.State.running
+                for (i, session) in sessions.enumerated() {
+                    session.setInput(i < update.inputs.count ? update.inputs[i] : PlayerInput())
+                    let s = session.update()
+                    if s == .failed || s == .ended { state = s }
+                }
+                localSeats = Set(sessions.compactMap(\.seat))
+                if first.match.isOver {
+                    flow.matchOver(winner: first.match.winner)
                 } else if state == .failed || state == .ended {
                     flow.onlineFailed("Disconnected from the game server")
                 }
@@ -305,7 +332,7 @@ final class AppModel: ObservableObject {
                 saveReplay(of: match)
             }
         case .results where flow.online:
-            _ = session?.update()  // keep answering the server until we leave
+            for session in sessions { _ = session.update() }  // keep answering the server until we leave
         case .paused, .results:
             loop.idle(to: now)  // no ticks run, but the clock stays current so resuming does not lurch
         }
