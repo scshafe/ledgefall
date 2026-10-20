@@ -616,21 +616,51 @@ void stress_tile(const Rules& rules, State& state, int tile, Fixed amount, int b
   state.tile_blame[static_cast<std::size_t>(tile)] = {static_cast<std::int8_t>(by), static_cast<std::int32_t>(state.world.frame)};
 }
 
-bool throw_lob(State& state, const Rules& rules, int seat, Payload payload, const Input& in) {
-  Object* o = free_object(state);
-  if (o == nullptr) return false;
+void lob_launch(const Rules& rules, const State& state, int seat, int facing, const Input& in, fp::Vec2& pos, fp::Vec2& vel) {
   const fp::EntityState& e = state.world.entities[static_cast<std::size_t>(seat)];
   const fp::MovementParams& m = rules.engine.params[static_cast<std::size_t>(seat)];
   // Lost-footing: up (jump) lobs high, forward throws far, neutral is between.
-  const int facing = e.facing;
   const bool forward = (in.move_x > 25 && facing > 0) || (in.move_x < -25 && facing < 0);
-  fp::Vec2 v;
-  if ((in.buttons & kButtonJump) != 0) v = {fx100(144 * facing), fx100(320)};
-  else if (forward) v = {fx100(288 * facing), fx100(192)};
-  else v = {fx100(208 * facing), fx100(192)};
-  *o = Object{ObjectKind::Lob, static_cast<std::int8_t>(seat), payload,
-              {e.pos.x + fx100(320 * facing), e.pos.y + m.body_height - fx100(260)}, v, {}, {}, 0};
+  if ((in.buttons & kButtonJump) != 0) vel = {fx100(144 * facing), fx100(320)};
+  else if (forward) vel = {fx100(288 * facing), fx100(192)};
+  else vel = {fx100(208 * facing), fx100(192)};
+  pos = {e.pos.x + fx100(320 * facing), e.pos.y + m.body_height - fx100(260)};
+}
+
+bool throw_lob(State& state, const Rules& rules, int seat, Payload payload, const Input& in) {
+  Object* o = free_object(state);
+  if (o == nullptr) return false;
+  fp::Vec2 pos, vel;
+  lob_launch(rules, state, seat, state.world.entities[static_cast<std::size_t>(seat)].facing, in, pos, vel);
+  *o = Object{ObjectKind::Lob, static_cast<std::int8_t>(seat), payload, pos, vel, {}, {}, 0};
   return true;
+}
+
+bool predict_lob(const Rules& rules, const State& state, fp::Vec2 pos, fp::Vec2 vel, Fixed& land_x, Fixed& land_top) {
+  const fp::Rect& blast = rules.engine.stage.blast;
+  for (int t = 0; t < 150; ++t) {
+    const fp::Vec2 prev = pos;
+    vel.y = vel.y - kLobGravity;
+    pos = pos + vel;
+    if (vel.y <= Fixed::zero()) {
+      bool found = false;
+      Fixed top = Fixed::zero();
+      each_surface(rules, state, [&](const Surface& s) {
+        if (pos.x < s.left || pos.x > s.right) return;
+        if (prev.y >= s.top && pos.y <= s.top && (!found || s.top > top)) {
+          top = s.top;
+          found = true;
+        }
+      });
+      if (found) {
+        land_x = pos.x;
+        land_top = top;
+        return true;
+      }
+    }
+    if (pos.y < blast.bottom || pos.x < blast.left || pos.x > blast.right) return false;
+  }
+  return false;
 }
 
 void update_objects(const Rules& rules, State& state, fp::Events& scratch) {

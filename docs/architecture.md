@@ -97,6 +97,12 @@ difference will be absorbed.
   #22, worked around by scaling a copy of the config).
 - Engine bug found: fighter-physics#23 (`restore` rejects a world with a doomed
   tile); rollback cannot ship until it is fixed and the pin bumped.
+- Bots use their kit (`src/bot.cpp`): they plan a move that suits the situation
+  (walls and anvils for Mason, lobs that land near someone's feet for Glim
+  and Fuse's charge, gust, spring and drill for Pip, saw and bumper for Fuse,
+  thorns and roots for Fern, rub out for Dab, lodestone and polarity for
+  Ferro), turn to face the target, and cast with the level's gap and chance.
+  Their choices come from their own stream, not the match's.
 - Known gaps against lost-footing: the respawn halo and post-respawn immunity
   wait for hazards; the engine splits a straddler's load equally between the
   tiles (lost-footing: 75% each).
