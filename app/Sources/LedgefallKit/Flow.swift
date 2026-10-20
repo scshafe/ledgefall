@@ -23,6 +23,7 @@ public enum FlowEffect: Equatable {
     case browseRooms // online: start listing the open rooms
     case joinRoom(String)  // online: take a seat in this room
     case leaveOnline // online: drop the room or the match; back to the setup screen
+    case rematch     // online: the same setup again (the host opens a room, the others join it)
     case listReplays // read the saved replays into the list
     case watchReplay(Int) // watch the replay at this index of the list
     case stopWatching     // back to the setup screen
@@ -140,8 +141,11 @@ public struct Flow: Equatable {
         case .results:
             switch action {
             case .confirm where online:
-                leaveOnline()
-                return .leaveOnline
+                phase = .connecting
+                online = false
+                status = "Waiting for a rematch..."
+                failed = false
+                return .rematch
             case .confirm:
                 phase = .playing
                 return .startMatch
@@ -230,6 +234,7 @@ public struct Flow: Equatable {
         replayIndex = min(replayIndex, max(new.count - 1, 0))
     }
 
+    /// A rematch room was found and joined, or the wait for it timed out and something is said instead.
     public mutating func setStatus(_ text: String) {
         guard phase == .connecting else { return }
         status = text

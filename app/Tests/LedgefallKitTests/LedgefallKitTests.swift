@@ -339,7 +339,7 @@ final class FlowTests: XCTestCase {
         XCTAssertEqual(flow.phase, .setup)
     }
 
-    func testOnlineResultsGoBackToSetup() {
+    func testOnlineResultsOfferARematch() {
         var flow = Flow()
         go(&flow, to: Flow.modeRow)
         flow.handle(.right)
@@ -348,9 +348,15 @@ final class FlowTests: XCTestCase {
         flow.onlineStarted()
         flow.matchOver(winner: 1)
         XCTAssertEqual(flow.phase, .results(winner: 1))
-        XCTAssertEqual(flow.handle(.confirm), .leaveOnline)  // no rematch online
+        XCTAssertEqual(flow.handle(.confirm), .rematch)  // the same match again
+        XCTAssertEqual(flow.phase, .connecting)
+        XCTAssertEqual(flow.status, "Waiting for a rematch...")
+        flow.onlineStarted()
+        XCTAssertTrue(flow.online)
+        flow.matchOver(winner: nil)
+        XCTAssertEqual(flow.handle(.back), .leaveOnline)  // or leave
         XCTAssertEqual(flow.phase, .setup)
-        // Backing out while connecting or browsing also leaves.
+        // Backing out while connecting also leaves.
         flow.handle(.confirm)
         XCTAssertEqual(flow.phase, .connecting)
         XCTAssertEqual(flow.handle(.back), .leaveOnline)

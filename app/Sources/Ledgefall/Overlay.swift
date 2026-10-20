@@ -179,7 +179,7 @@ struct OverlayView: View {
 
     private func resultsPanel(_ winner: Int?) -> some View {
         panel(title: winner.map { "P\($0 + 1) wins" } ?? "No winner",
-              lines: ["Return / A: rematch", "Esc / B: setup", "(the replay is saved in Application Support/Ledgefall/Replays)"])
+              lines: [model.flow.online ? "Return / A: rematch with the same players" : "Return / A: rematch", "Esc / B: setup", "(the replay is saved in Application Support/Ledgefall/Replays)"])
     }
 
     private func panel(title: String, lines: [String]) -> some View {
