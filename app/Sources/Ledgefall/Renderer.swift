@@ -87,7 +87,7 @@ final class Renderer: NSObject, MTKViewDelegate {
               let commands = queue.makeCommandBuffer(),
               let encoder = commands.makeRenderCommandEncoder(descriptor: pass) else { return }
 
-        let match = model.loop.match
+        let match = model.displayMatch
         let size = view.drawableSize
         let camera = Camera(blast: match.blast, viewWidth: Float(size.width), viewHeight: Float(size.height))
         var uniforms = Uniforms(scale: camera.scale, offset: camera.offset)

@@ -249,12 +249,13 @@ final class FlowTests: XCTestCase {
         XCTAssertEqual(flow.players, 2)
         XCTAssertEqual(flow.arena, .yard)
         XCTAssertEqual(flow.teamMode, .off)
+        XCTAssertEqual(flow.mode, .local)
         XCTAssertEqual(flow.selectedRow, flow.startRow)
         go(&flow, to: Flow.playersRow)
-        flow.handle(.up)  // clamped
         for _ in 0..<5 { flow.handle(.right) }
         XCTAssertEqual(flow.players, 4)
         XCTAssertEqual(flow.rows, Flow.firstSeatRow + 4 + 1)
+        XCTAssertEqual(flow.startRow, 9)
         for _ in 0..<5 { flow.handle(.left) }
         XCTAssertEqual(flow.players, 2)
         go(&flow, to: Flow.stocksRow)
@@ -287,6 +288,71 @@ final class FlowTests: XCTestCase {
         XCTAssertEqual(flow.fighters[1], .ferro)  // wraps
         go(&flow, to: Flow.firstSeatRow + 1)
         XCTAssertEqual(flow.fighters[0], .mason)  // the other seats are untouched
+    }
+
+    func testOnlineHostingFlow() {
+        var flow = Flow()
+        go(&flow, to: Flow.modeRow)
+        flow.handle(.right)
+        XCTAssertEqual(flow.mode, .host)
+        go(&flow, to: flow.startRow)
+        XCTAssertEqual(flow.handle(.confirm), .hostRoom)
+        XCTAssertEqual(flow.phase, .connecting)
+        flow.setStatus("Waiting for the others...")
+        XCTAssertEqual(flow.status, "Waiting for the others...")
+        flow.onlineStarted()
+        XCTAssertEqual(flow.phase, .playing)
+        XCTAssertTrue(flow.online)
+        // Online there is no pause: the key leaves.
+        XCTAssertEqual(flow.handle(.pause), .leaveOnline)
+        XCTAssertEqual(flow.phase, .setup)
+        XCTAssertFalse(flow.online)
+    }
+
+    func testOnlineJoiningFlow() {
+        var flow = Flow()
+        go(&flow, to: Flow.modeRow)
+        flow.handle(.left)  // wraps to the last mode
+        XCTAssertEqual(flow.mode, .join)
+        go(&flow, to: flow.startRow)
+        XCTAssertEqual(flow.handle(.confirm), .browseRooms)
+        XCTAssertEqual(flow.phase, .browsing)
+        XCTAssertNil(flow.handle(.confirm))  // no rooms yet: nothing to join
+        let setup = OnlineSetup(arena: .yard, stocks: 3, seed: 1, fighters: [.mason, .glim], teams: [nil, nil])
+        let a = LobbyRoom(id: "a", name: setup.roomName, state: "open", seatCount: 2, taken: 1)
+        let b = LobbyRoom(id: "b", name: setup.roomName, state: "open", seatCount: 2, taken: 0)
+        flow.setRooms([a, b])
+        flow.handle(.down)
+        flow.handle(.down)  // clamped
+        XCTAssertEqual(flow.roomIndex, 1)
+        // The list changes under the cursor: the chosen room stays chosen.
+        flow.setRooms([b])
+        XCTAssertEqual(flow.rooms.first?.id, "b")
+        XCTAssertEqual(flow.roomIndex, 0)
+        XCTAssertEqual(flow.handle(.confirm), .joinRoom("b"))
+        XCTAssertEqual(flow.phase, .connecting)
+        flow.onlineFailed("started")
+        XCTAssertTrue(flow.failed)
+        XCTAssertEqual(flow.status, "started")
+        XCTAssertEqual(flow.handle(.confirm), .leaveOnline)  // any way out goes back to the setup
+        XCTAssertEqual(flow.phase, .setup)
+    }
+
+    func testOnlineResultsGoBackToSetup() {
+        var flow = Flow()
+        go(&flow, to: Flow.modeRow)
+        flow.handle(.right)
+        go(&flow, to: flow.startRow)
+        flow.handle(.confirm)
+        flow.onlineStarted()
+        flow.matchOver(winner: 1)
+        XCTAssertEqual(flow.phase, .results(winner: 1))
+        XCTAssertEqual(flow.handle(.confirm), .leaveOnline)  // no rematch online
+        XCTAssertEqual(flow.phase, .setup)
+        // Backing out while connecting or browsing also leaves.
+        flow.handle(.confirm)
+        XCTAssertEqual(flow.phase, .connecting)
+        XCTAssertEqual(flow.handle(.back), .leaveOnline)
     }
 
     func testSeatRowsOnlyForTheSeatsInTheMatch() {
