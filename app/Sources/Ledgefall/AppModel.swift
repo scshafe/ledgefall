@@ -113,12 +113,12 @@ final class AppModel: ObservableObject {
     private func runOnline(_ work: @escaping (LobbyClient) async throws -> Void) {
         onlineTask?.cancel()
         onlineTask = Task { [weak self] in
+            guard let model = self else { return }
             do {
-                guard let self else { return }
-                try await work(try self.lobbyClient())
+                try await work(try model.lobbyClient())
             } catch is CancellationError {
             } catch {
-                await MainActor.run { self?.flow.onlineFailed("\(error)") }
+                await MainActor.run { model.flow.onlineFailed("\(error)") }
             }
         }
     }
