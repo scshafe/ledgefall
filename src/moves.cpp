@@ -153,8 +153,9 @@ bool cast(const Rules& rules, State& state, int seat, int slot, const Input& in,
       else if (slot == 1) done = throw_lob(state, rules, seat, Payload::Charge, in);
       else done = cast_saw(state, rules, seat);
       break;
-    case Character::Fern:  // the vine is its own PR
-      if (slot == 1) done = cast_thorns(state, rules, seat);
+    case Character::Fern:
+      if (slot == 0) done = cast_vine(state, rules, seat);
+      else if (slot == 1) done = cast_thorns(state, rules, seat);
       else if (slot == 2) done = cast_roots(state, rules, seat);
       break;
     case Character::Dab:

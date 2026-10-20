@@ -53,6 +53,7 @@ public enum Scene {
         case .halo: return SIMD4(1.00, 0.95, 0.60, 0.8)
         case .hollow: return SIMD4(0.62, 0.50, 0.38, 1)
         case .leaf: return SIMD4(0.35, 0.75, 0.30, 1)
+        case .vine: return SIMD4(0.30, 0.55, 0.20, 1)
         case .cometWarning, .rockWarning: return SIMD4(1.00, 0.30, 0.20, 0.25)
         }
     }
